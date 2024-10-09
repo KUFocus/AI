@@ -7,6 +7,6 @@ PyYAML==6.0.1
 easyocr==1.7.1
 numpy==1.21.6
 openai==1.51.1
-python-dotenv==1.0.1
+python-dotenv
 
 -f https://download.pytorch.org/whl/torch_stable.html
