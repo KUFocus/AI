@@ -62,7 +62,6 @@ custom_model = Model(config['network_params']['input_channel'],
 # 모델 로드 확인 (디버그용)
 try:
     checkpoint = torch.load(model_path, map_location=device)
-    app.logger.info(f"Checkpoint loaded successfully. Keys: {checkpoint.keys()}")
     custom_model.load_state_dict(checkpoint, strict=False)
     custom_model.eval()
     app.logger.info("Model loaded and set to evaluation mode.")
