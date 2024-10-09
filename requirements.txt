@@ -1,10 +1,12 @@
 Flask==2.2.5
 requests==2.28.2
 Pillow==9.5.0
-torch==1.13.1
-torchvision==0.19.1
+torch==1.13.1+cpu
+torchvision==0.14.1+cpu
 PyYAML==6.0.1
 easyocr==1.7.1
 numpy==1.24.2
 openai==1.51.1
 python-dotenv==1.0.1
+
+-f https://download.pytorch.org/whl/torch_stable.html
