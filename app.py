@@ -9,7 +9,7 @@ from PIL import Image, UnidentifiedImageError
 from io import BytesIO  # Base64 처리용
 from torchvision import transforms
 import yaml
-from models.custom_model import Model  # custom.py에서 모델 불러오기
+from custom import Model  # custom.py에서 모델 불러오기
 from easyocr import Reader  # EasyOCR 불러오기
 import numpy as np
 import openai
