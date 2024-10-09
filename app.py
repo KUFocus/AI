@@ -13,6 +13,10 @@ from models.custom_model import Model  # custom.py에서 모델 불러오기
 from easyocr import Reader  # EasyOCR 불러오기
 import numpy as np
 import openai
+from dotenv import load_dotenv
+
+# .env 파일에서 환경 변수 로드
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -26,11 +30,11 @@ app.logger.addHandler(handler)
 app.logger.setLevel(logging.DEBUG)
 
 # Clova Speech API 설정
-CLOVA_SPEECH_INVOKE_URL = "https://clovaspeech-gw.ncloud.com/external/v1/8900/f4015a40b9e604c895eaf4912756a41a2f499cab05507c14010371f72c2ced4f"
-CLOVA_SPEECH_API_KEY = "4fae6ca288344194a490b0648bcb7f12"
+CLOVA_SPEECH_INVOKE_URL = os.getenv("CLOVA_SPEECH_INVOKE_URL")
+CLOVA_SPEECH_API_KEY = os.getenv("CLOVA_SPEECH_API_KEY")
 
 # OpenAI API 키 설정
-openai.api_key = "sk-HHDx7Irwbxv60c7iETW3iA_-vsh8B05Qeqxqy9LEDQT3BlbkFJ9iuMn36-35_K2gLSyq6oWMflG9S37iUT7pbDdN7s4A"
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # 커스텀 모델 로드 설정
 model_path = 'custom.pth'
