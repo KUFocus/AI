@@ -1,0 +1,2 @@
+CLOVA_SPEECH_INVOKE_URL = "https://clovaspeech-gw.ncloud.com/external/v1/8900/f4015a40b9e604c895eaf4912756a41a2f499cab05507c14010371f72c2ced4f"
+CLOVA_SPEECH_API_KEY = "4fae6ca288344194a490b0648bcb7f12"
