@@ -5,8 +5,7 @@ torch==1.13.1+cpu
 torchvision==0.14.1+cpu
 PyYAML==6.0.1
 easyocr==1.7.1
-numpy==1.21.6
+numpy==1.23.5  # 호환 가능한 버전으로 설정
 openai==1.51.1
-python-dotenv
-
--f https://download.pytorch.org/whl/torch_stable.html
+python-dotenv==0.21.1  # 최신 호환 버전으로 조정
+typing-extensions==4.11.0  # 충돌 해결을 위한 버전 고정
