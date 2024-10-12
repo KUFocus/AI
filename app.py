@@ -16,6 +16,7 @@ from easyocr import Reader  # EasyOCR 불러오기
 import numpy as np
 import openai
 from dotenv import load_dotenv
+from datetime import datetime
 
 # .env 파일에서 환경 변수 로드
 load_dotenv()
@@ -88,22 +89,42 @@ def summarize_text():
         return jsonify({'error': 'No text provided'}), 400
 
     try:
+        # 현재 날짜를 YYYY-MM-DD 형식으로 가져옴
+        today_date = datetime.now().strftime("%Y-%m-%d")
+        
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "다음 회의록 내용을 바탕으로 핵심을 간결하게 요약하고 마치 제목처럼 만들어 줘. 회의 주제와 목적을 명확하게 나타내는 한 문장으로 간결하게 정리해줘."},
+                {
+                    "role": "system",
+                    "content": (
+                        f"다음 회의록 내용을 바탕으로 핵심을 요약하고, JSON 형식으로 반환해줘. "
+                        f"만약 일정이 포함되어 있다면, 'summarizedText', 'extractedScheduleDate' (LocalDateTime 형식, 예: 2024-11-06T12:49:15), "
+                        f"'extractedScheduleContent'로 JSON 객체를 만들어 줘. "
+                        f"일정이 '오늘', '내일', '다음 주', '다음주 목요일'과 같이 상대적인 표현일 경우, 오늘의 날짜({today_date})를 기준으로 해당 날짜를 올바른 LocalDateTime 형식으로 환산해줘. "
+                        f"'다음주 목요일'은 현재 날짜 기준으로 다음 주에 있는 목요일의 날짜로 계산해줘. "
+                        f"만약 일정이 없다면 'extractedScheduleDate'과 'extractedScheduleContent'는 빈 문자열로 반환해."
+                    )
+                },
                 {"role": "user", "content": input_text}
             ],
             max_tokens=150,
             temperature=0.7
         )
+        response_content = response.choices[0].message.content.strip()
         
-        summary = response.choices[0].message.content.strip()
-        app.logger.info(f"Summarized text: {summary}")
+        app.logger.info(f"GPT response: {response_content}")
+        
+        # 응답에서 코드 블록을 제거
+        if response_content.startswith("```json"):
+            response_content = response_content[7:-3].strip()
+
+        extracted_data = json.loads(response_content)
         
         return jsonify({
-            'summarizedText': summary,  # Flask 응답을 DTO 필드에 맞춤
-            'extractedSchedule': None   # 일정 정보는 없으므로 임시로 None 설정
+            'summarizedText': extracted_data.get('summarizedText', ''),
+            'extractedScheduleContent': extracted_data.get('extractedScheduleContent', ''),
+            'extractedScheduleDate': extracted_data.get('extractedScheduleDate', '')
         }), 200
     except Exception as e:
         app.logger.error(f"Error in summarizing text: {str(e)}")
