@@ -17,6 +17,7 @@ import numpy as np
 import openai
 from dotenv import load_dotenv
 from datetime import datetime
+from tempfile import NamedTemporaryFile
 
 # .env 파일에서 환경 변수 로드
 load_dotenv()
@@ -136,49 +137,57 @@ def summarize_text():
 @app.route('/process_audio', methods=['POST'])
 def process_audio():
     app.logger.info("Received request for process_audio")
-    
-    if 'file' not in request.files:
-        app.logger.error("No file part in the request")
-        return jsonify({'error': 'No file part'}), 400
-    
-    file = request.files['file']
-    file_name = request.form.get('fileName', 'audio_file')
-    
-    app.logger.info(f"Received file: {file_name}")
 
-    file_path = os.path.join('/tmp', file_name)
-    file.save(file_path)
-    app.logger.info(f"File saved at {file_path}")
+    data = request.get_json()
+    file_url = data.get('filePath', None)
+
+    if not file_url:
+        app.logger.error("No filePath provided in the request")
+        return jsonify({'error': 'No filePath provided'}), 400
+
+    app.logger.info(f"Received file path: {file_url}")
 
     try:
-        # Clova API 호출
-        response = clova_speech_recognition(file_path)
-        
-        # 응답 데이터에서 필요한 정보만 추출하여 content에 저장할 데이터 구성
-        segments = response.get('segments', [])
-        content_data = {
-            "overall_text": response.get("text", ""),
-            "overall_confidence": response.get("confidence", 0.0),
-            "segments": [
-                {
-                    "speaker": segment["speaker"]["name"],
-                    "text": segment["text"],
-                    "confidence": round(segment["confidence"], 4),
-                    "start_time": segment["start"],
-                    "end_time": segment["end"]
+        # URL에서 오디오 파일을 다운로드하여 임시 파일에 저장
+        with NamedTemporaryFile(delete=True, suffix=".mp3") as temp_file:
+            response = requests.get(file_url, stream=True)
+            if response.status_code == 200:
+                temp_file.write(response.content)
+                temp_file.flush()
+
+                # Clova API 호출
+                clova_response = clova_speech_recognition(temp_file.name)
+                
+                # 응답 데이터에서 필요한 정보만 추출하여 content에 저장할 데이터 구성
+                segments = clova_response.get('segments', [])
+                content_data = {
+                    "overall_text": clova_response.get("text", ""),
+                    "overall_confidence": clova_response.get("confidence", 0.0),
+                    "segments": [
+                        {
+                            "speaker": segment["speaker"]["name"],
+                            "text": segment["text"],
+                            "confidence": round(segment["confidence"], 4),
+                            "start_time": segment["start"],
+                            "end_time": segment["end"]
+                        }
+                        for segment in segments
+                    ]
                 }
-                for segment in segments
-            ]
-        }
-        # JSON 형식으로 content에 저장
-        content = json.dumps(content_data, ensure_ascii=False)
-        
-        return app.response_class(
-            response=content,
-            mimetype='application/json'
-        )
+                
+                # JSON 형식으로 content에 저장
+                content = json.dumps(content_data, ensure_ascii=False)
+
+                return app.response_class(
+                    response=content,
+                    mimetype='application/json'
+                )
+            else:
+                app.logger.error("Failed to download file from URL")
+                return jsonify({'error': 'Failed to download file from URL'}), 404
+
     except Exception as e:
-        app.logger.error(f"Error in audio processing: {str(e)}")
+        app.logger.error(f"Audio processing error: {str(e)}")
         return jsonify({'error': 'Audio processing failed'}), 500
 
 # 이미지 파일을 처리하는 엔드포인트 (EasyOCR 사용)
@@ -186,45 +195,55 @@ def process_audio():
 def process_image():
     app.logger.info("Received request for process_image")
 
-    if 'file' not in request.files:
-        app.logger.error("No file part in the request")
-        return jsonify({'error': 'No file part in the request'}), 400
+    data = request.get_json()
+    file_url = data.get('filePath', None)
 
-    file = request.files['file']
-    file_name = request.form.get('fileName')
-    app.logger.info(f"Received file: {file_name}")
+    if not file_url:
+        app.logger.error("No filePath provided in the request")
+        return jsonify({'error': 'No filePath provided'}), 400
+
+    app.logger.info(f"Received file path: {file_url}")
 
     try:
-        # 이미지 파일 로드
-        image = Image.open(file.stream)
-        app.logger.info(f"Image format: {image.format}")
+        # URL에서 이미지를 다운로드하여 임시 파일에 저장
+        with NamedTemporaryFile(delete=True, suffix=".jpg") as temp_file:
+            response = requests.get(file_url, stream=True)
+            if response.status_code == 200:
+                temp_file.write(response.content)
+                temp_file.flush()
+                
+                # 다운로드된 이미지를 로드
+                with Image.open(temp_file.name) as image:
+                    app.logger.info(f"Image format: {image.format}")
 
-        # 이미지 크기 확인 후 리사이즈
-        max_size = (1024, 1024)
-        if image.size[0] > max_size[0] or image.size[1] > max_size[1]:
-            app.logger.info(f"Image is too large, resizing to {max_size}")
-            image.thumbnail(max_size)
+                    # 이미지 크기 확인 후 리사이즈
+                    max_size = (1024, 1024)
+                    if image.size[0] > max_size[0] or image.size[1] > max_size[1]:
+                        app.logger.info(f"Image is too large, resizing to {max_size}")
+                        image.thumbnail(max_size)
 
-        app.logger.info(f"Resized image size: {image.size}")
+                    app.logger.info(f"Resized image size: {image.size}")
 
-        # EasyOCR로 텍스트 감지 및 인식
-        results = reader.readtext(np.array(image), detail=0)
-        detected_text = ' '.join(results)
-        app.logger.info(f"Detected text: {detected_text}")
+                    # EasyOCR로 텍스트 감지 및 인식
+                    results = reader.readtext(np.array(image), detail=0)
+                    detected_text = ' '.join(results)
+                    app.logger.info(f"Detected text: {detected_text}")
 
-        # GPT를 이용한 오탈자 수정
-        corrected_text = correct_spelling_with_gpt(detected_text)
+                    # GPT를 이용한 오탈자 수정
+                    corrected_text = correct_spelling_with_gpt(detected_text)
 
-        response = {
-            'filename': file_name,
-            'text': corrected_text  # 오탈자 수정된 최종 텍스트만 반환
-        }
+                    response_data = {
+                        'filename': os.path.basename(file_url),
+                        'text': corrected_text
+                    }
 
-        # JSON 응답 반환
-        return app.response_class(
-            response=json.dumps(response, ensure_ascii=False),
-            mimetype='application/json'
-        )
+                    return app.response_class(
+                        response=json.dumps(response_data, ensure_ascii=False),
+                        mimetype='application/json'
+                    )
+            else:
+                app.logger.error("Failed to download file from URL")
+                return jsonify({'error': 'Failed to download file from URL'}), 404
 
     except UnidentifiedImageError as e:
         app.logger.error(f"Image processing error: {str(e)}")
