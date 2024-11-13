@@ -224,13 +224,14 @@ def process_image():
 
                     app.logger.info(f"Resized image size: {image.size}")
 
-                    # EasyOCR로 텍스트 감지 및 인식
-                    results = reader.readtext(np.array(image), detail=0)
-                    detected_text = ' '.join(results)
-                    app.logger.info(f"Detected text: {detected_text}")
+                    # 1단계: EasyOCR로 텍스트 감지 및 인식
+                    easyocr_results = reader.readtext(np.array(image), detail=0)
+                    easyocr_text = ' '.join(easyocr_results)
+                    app.logger.info(f"EasyOCR detected text: {easyocr_text}")
 
-                    # GPT를 이용한 오탈자 수정
-                    corrected_text = correct_spelling_with_gpt(detected_text)
+                    # 2단계: GPT-4o OCR로 텍스트 감지 및 인식
+                    corrected_text = gpt_ocr_for_image(file_url, easyocr_text)
+                    app.logger.info(f"GPT-4o OCR detected text: {corrected_text}")
 
                     response_data = {
                         'filename': os.path.basename(file_url),
@@ -253,26 +254,35 @@ def process_image():
         return jsonify({'error': 'Image processing failed'}), 500
 
 
-def correct_spelling_with_gpt(detected_text):
-    """ GPT를 이용하여 오탈자를 교정하는 함수 """
+def gpt_ocr_for_image(file_url, easyocr_text):
+    """ GPT-4o를 사용하여 이미지를 분석하고 EasyOCR 결과를 보완하는 함수 """
     try:
+        prompt = (
+            "다음은 이미지에서 추출된 텍스트야. 이 텍스트는 EasyOCR로 추출된 것으로, 오탈자나 숫자가 잘못 인식될 수 있어."
+            "이 텍스트를 참고하여 이미지에서 정확한 모든 텍스트를 다시 인식하고, 수정된 완성된 텍스트를 반환해줘."
+            "너가 분석한 텍스트를 최우선적으로 고려해서 수정해주고, 인덴트가 있으면 적용해서 반환해줘."
+            "너가 분석한 숫자를 수정된 텍스트에 반영해주고, 1과 (를 헷갈리지 마."
+            "수정된 텍스트 이외의 그 어떤 문자도 작성하지 말고, 수정된 텍스트만을 반환해줘."
+        )
+        
+        # GPT에게 EasyOCR 결과와 함께 요청
         response = openai.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[
-                {"role": "system", "content": "다음 텍스트의 오탈자를 교정해 줘. 교정된 텍스트를 제외하고 어떤 문자도 적지마."},
-                {"role": "user", "content": detected_text}
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": f"Image URL: {file_url}\nEasyOCR Text: {easyocr_text}"}
             ],
-            max_tokens=500,
+            max_tokens=1000,
             temperature=0.7
         )
         
-        corrected_text = response.choices[0].message.content.strip()
-        app.logger.info(f"Corrected text: {corrected_text}")
-        return corrected_text
-    except Exception as e:
-        app.logger.error(f"Error in correcting text with GPT: {str(e)}")
-        return detected_text  # 교정 실패 시 원본 텍스트 반환
+        gpt_corrected_text = response.choices[0].message.content.strip()
+        app.logger.info(f"Corrected text from GPT-4o OCR: {gpt_corrected_text}")
+        return gpt_corrected_text
 
+    except Exception as e:
+        app.logger.error(f"Error in GPT-4o OCR correction: {str(e)}")
+        return easyocr_text  # 실패 시 EasyOCR 결과 반환
 
 # Clova Speech API를 호출하여 파일을 텍스트로 변환하는 함수
 def clova_speech_recognition(file_path):
