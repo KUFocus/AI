@@ -90,6 +90,31 @@ class MeetingSummarizerTest(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     summarizer.summarize("회의 내용")
 
+    def test_invalid_schedule_date_is_rejected(self):
+        for value in [
+            '2026-02-30T10:00:00', '2026-02-29T10:00:00',
+            '2026-09-28T24:00:00', '2026-09-28T10:60:00',
+            '2026-09-28T10:00:60', '2026-09-28',
+            '2026-09-28 10:00:00', '2026-09-28T10:00:00+09:00',
+            '2026-09-28T10:00:00Z', '다음 주 월요일', '',
+        ]:
+            with self.subTest(value=value):
+                response = json.dumps({'schedules': [{
+                    'extractedScheduleDate': value,
+                    'extractedScheduleContent': '디자인 리뷰',
+                }]})
+                summarizer = MeetingSummarizer(lambda messages: response)
+                with self.assertRaises(ValidationError):
+                    summarizer.summarize('회의 내용')
+
+    def test_valid_schedule_date_preserves_original_precision(self):
+        for value in ['2028-02-29T10:00:00', '2026-09-28T10:00', '2026-09-28T10:00:00.123456789']:
+            with self.subTest(value=value):
+                schedule = {'extractedScheduleDate': value, 'extractedScheduleContent': '디자인 리뷰'}
+                summarizer = MeetingSummarizer(lambda messages: json.dumps({'schedules': [schedule]}))
+                result = summarizer.summarize('회의 내용')
+                self.assertEqual(result['schedules'], [schedule])
+
     def test_uses_current_date_for_each_request(self):
         dates = iter([datetime(2026, 9, 25, 23, 59), datetime(2026, 9, 26, 0, 1)])
         prompts = []
