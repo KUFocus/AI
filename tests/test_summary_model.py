@@ -64,6 +64,41 @@ class OpenAISummaryModelTest(unittest.TestCase):
         self.assertEqual(set(schedule["properties"]), {"extractedScheduleDate", "extractedScheduleContent"})
         self.assertTrue(all(field["type"] == "string" for field in schedule["properties"].values()))
 
+    def test_incomplete_refused_or_empty_response_is_rejected_without_retry(self):
+        valid_json = '{"summarizedText": "회의 요약", "schedules": []}'
+        for finish_reason, content, refusal, error in [
+            ('length', valid_json, None, '종료 사유: length'),
+            ('content_filter', valid_json, None, '종료 사유: content_filter'),
+            ('tool_calls', valid_json, None, '종료 사유: tool_calls'),
+            ('stop', valid_json, '응답 거절', '응답을 거절했습니다'),
+            ('stop', None, None, '응답 내용이 비어 있습니다'),
+            ('stop', '', None, '응답 내용이 비어 있습니다'),
+            ('stop', ' \t\n', None, '응답 내용이 비어 있습니다'),
+            (None, None, None, '응답에 결과가 없습니다'),
+        ]:
+            with self.subTest(finish_reason=finish_reason, content=content, refusal=refusal):
+                requests = []
+
+                def respond(request):
+                    requests.append(request)
+                    choices = [] if finish_reason is None else [{
+                        'index': 0, 'finish_reason': finish_reason,
+                        'message': {'role': 'assistant', 'content': content, 'refusal': refusal},
+                    }]
+                    return httpx.Response(200, json={
+                        'id': 'test-completion', 'object': 'chat.completion',
+                        'created': 0, 'model': 'gpt-4o-mini', 'choices': choices,
+                    })
+
+                with OpenAI(
+                    api_key='test-only', base_url='http://model.test/v1',
+                    http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+                ) as client:
+                    with self.assertRaisesRegex(ValueError, error):
+                        OpenAISummaryModel(client)([{'role': 'user', 'content': '회의 내용'}])
+
+                self.assertEqual(len(requests), 1)
+
     def test_provider_timeout_propagates_to_caller(self):
         def timeout(request):
             raise httpx.ReadTimeout("test timeout", request=request)
