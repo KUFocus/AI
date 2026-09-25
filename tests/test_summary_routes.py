@@ -88,6 +88,15 @@ class SummaryRoutesTest(unittest.TestCase):
 
         model.assert_not_called()
 
+    def test_repaired_response_returns_success(self):
+        model = Mock(side_effect=['{}', '{"summarizedText": "회의 요약", "schedules": []}'])
+        client = self.create_client(model)
+        with self.assertLogs('summary_workflow', level='WARNING'):
+            response = client.post('/summarize_text', json={'text': '회의 내용'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {'summarizedText': '회의 요약', 'schedules': []})
+        self.assertEqual(model.call_count, 2)
+
     def test_invalid_model_json_returns_existing_error_response(self):
         model = Mock(return_value="invalid-json")
         client = self.create_client(model)
@@ -97,9 +106,9 @@ class SummaryRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.get_json(), {"error": "회의 내용을 요약하지 못했습니다."})
-        self.assertEqual(model.call_count, 1)
+        self.assertEqual(model.call_count, 2)
 
-    def test_invalid_model_structure_returns_korean_error_without_retry(self):
+    def test_invalid_model_structure_returns_korean_error_after_one_repair(self):
         model = Mock(return_value='{"summarizedText": "회의 요약", "schedules": "일정 없음"}')
         client = self.create_client(model)
 
@@ -108,9 +117,9 @@ class SummaryRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.get_json(), {"error": "회의 내용을 요약하지 못했습니다."})
-        model.assert_called_once()
+        self.assertEqual(model.call_count, 2)
 
-    def test_missing_model_fields_return_error_without_retry(self):
+    def test_missing_model_fields_return_error_after_one_repair(self):
         for content in ['{}', '{"summarizedText": "회의 요약"}', '{"schedules": []}']:
             with self.subTest(content=content):
                 model = Mock(return_value=content)
@@ -121,7 +130,7 @@ class SummaryRoutesTest(unittest.TestCase):
 
                 self.assertEqual(response.status_code, 500)
                 self.assertEqual(response.get_json(), {"error": "회의 내용을 요약하지 못했습니다."})
-                model.assert_called_once()
+                self.assertEqual(model.call_count, 2)
 
     def test_model_failure_keeps_existing_error_response(self):
         def unavailable_model(messages):
