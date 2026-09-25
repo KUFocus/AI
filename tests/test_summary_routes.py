@@ -19,7 +19,7 @@ class SummaryRoutesTest(unittest.TestCase):
             "schedules": [{
                 "extractedScheduleDate": "2026-09-28T15:00:00",
                 "extractedScheduleContent": "디자인 리뷰",
-                "dateExpression": "다음 주 월요일", "status": "confirmed", "eventId": "event-1", "evidence": "다음 주 월요일"
+                "dateExpression": "다음 주 월요일", "status": "confirmed", "eventId": "event-1", "timeExpression": "오후 3시", "evidence": "다음 주 월요일 오후 3시"
             }]
         }''')
 
@@ -41,10 +41,10 @@ class SummaryRoutesTest(unittest.TestCase):
         model = Mock(return_value='''{
             "summarizedText": "회의 요약",
             "schedules": [{
-                "extractedScheduleDate": "2026-10-02T15:00:00",
+                "extractedScheduleDate": "2026-10-02T03:00:00",
                 "extractedScheduleContent": "디자인 리뷰",
                 "dateExpression": "다음 주 월요일", "status": "confirmed",
-                "eventId": "review", "evidence": "다음 주 월요일 오후 3시에 디자인 리뷰를 한다."
+                "eventId": "review", "timeExpression": "오후 3시", "evidence": "다음 주 월요일 오후 3시에 디자인 리뷰를 한다."
             }]
         }''')
         response = self.create_client(model).post('/summarize_text', json={
@@ -175,7 +175,7 @@ class SummaryRoutesTest(unittest.TestCase):
             "schedules": [{
                 "extractedScheduleDate": "2026-09-28T10:00:00",
                 "extractedScheduleContent": "리뷰",
-                "dateExpression": "다음 주", "status": "confirmed", "eventId": "event-1", "evidence": "다음 주"
+                "dateExpression": "다음 주", "status": "confirmed", "eventId": "event-1", "timeExpression": null, "evidence": "다음 주"
             }]
         }''')
         client = self.create_client(model)

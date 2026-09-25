@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from summary_schema import SummaryResponse
 from summary_workflow import build_summary_workflow
@@ -10,16 +11,21 @@ logger = logging.getLogger(__name__)
 
 
 class MeetingSummarizer:
-    def __init__(self, complete, now=datetime.now, *, repair_invalid_response=True):
+    def __init__(self, complete, now=None, *, repair_invalid_response=True):
         self.complete = complete
-        self.now = now
+        self.now = now or (lambda: datetime.now(ZoneInfo('Asia/Seoul')))
         self.workflow = build_summary_workflow(
             self.generate_response, self.validate_response,
             repair_invalid_response=repair_invalid_response,
         )
 
     def summarize(self, input_text, meeting_date: date | None = None):
-        reference_date = meeting_date if meeting_date is not None else self.now().date()
+        requested_at = self.now()
+        # 주입한 시간대 없는 시각도 한국 시간으로 해석한다.
+        if requested_at.tzinfo is None:
+            requested_at = requested_at.replace(tzinfo=ZoneInfo('Asia/Seoul'))
+        requested_at = requested_at.astimezone(ZoneInfo('Asia/Seoul'))
+        reference_date = meeting_date if meeting_date is not None else requested_at.date()
         reference_date_text = reference_date.isoformat()
         messages = [
             {
@@ -28,20 +34,24 @@ class MeetingSummarizer:
                     f"다음 회의록 내용을 바탕으로 JSON 객체를 만들기 위해 두 가지 작업을 수행해줘. "
                     f"첫째, 회의 내용에서 핵심을 요약하여 'summarizedText'로 반환해줘. 요약에 아래 일정 내용에 적을 일정과 관련된 내용은 절대 포함시키지 마. "
                     f"둘째, 일정별 제안, 확정, 변경, 취소의 결정 이력을 'schedules' 리스트로 반환해줘. 최종 결정만 남기지 말고 상태가 바뀌는 각 발언을 별도 객체로 기록해줘. "
-                    f"각 일정은 'extractedScheduleDate' (LocalDateTime 형식, 예: 2024-11-06T12:49:15), "
-                    f"'extractedScheduleContent', 'dateExpression', 'status', 'evidence', 'eventId'로 JSON 객체를 만들어 줘. "
+                    f"각 일정은 'extractedScheduleDate' (계산한 날짜와 시각 또는 null, 날짜나 시각이 빠졌으면 null 가능), "
+                    f"'extractedScheduleContent', 'dateExpression', 'timeExpression', 'status', 'evidence', 'eventId'로 JSON 객체를 만들어 줘. "
                     f"eventId는 이 요청 안에서만 쓰는 식별자야. 같은 일정의 변경 이력에는 같은 값을, 서로 다른 일정이나 별개 회차에는 다른 값을 사용해줘. "
                     f"status는 확정이면 confirmed, 제안 또는 확인 대기이면 tentative, 취소이면 cancelled로 적어줘. "
                     f"날짜가 언급됐다는 이유만으로 확정하지 마. 변경 전 확정과 변경 후 확정을 각각 기록하고 각 발언 시점의 날짜를 사용해줘. "
                     f"evidence에는 해당 결정의 근거 발언을 원문에서 그대로 복사해줘. 서로 다른 결정의 근거 구간은 겹치지 않게 해줘. 같은 발언이 반복되면 주변 문맥을 포함해 위치를 구분해줘. "
-                    f"확정 일정의 evidence에는 dateExpression도 포함해야 해. 날짜와 확정 발언이 서로 다른 문장이면 필요한 연속된 원문 구간을 함께 복사해줘. "
+                    f"확정 일정의 evidence에는 null이 아닌 dateExpression과 timeExpression도 포함해야 해. 날짜, 시각과 확정 발언이 서로 다른 문장이면 필요한 연속된 원문 구간을 함께 복사해줘. "
                     f"앞선 제안과 수락 발언을 함께 인용해야 날짜를 알 수 있으면 하나의 확정 결정으로 묶고, 그 제안을 별도 객체로 중복 기록하지 마. "
                     f"변경 전 날짜나 다른 일정의 날짜를 새 확정 발언과 연결하지 마. 변경 제안은 tentative로 기록하고 명시적인 취소가 없으면 취소 이력을 만들지 마. "
-                    f"tentative 또는 cancelled이면 extractedScheduleDate와 dateExpression은 null로 적고 날짜를 추측하지 마. "
-                    f"dateExpression에는 시간을 제외한 날짜 표현을 원문에서 그대로 복사해 줘. "
+                    f"tentative 또는 cancelled이면 extractedScheduleDate, dateExpression, timeExpression은 null로 적고 날짜와 시각을 추측하지 마. "
+                    f"timeExpression은 '오후 3시 반', '15:30'처럼 원문의 시각 표현을 그대로 복사해줘. '3시쯤'의 '쯤'이나 '3시 또는 4시'의 조건을 지우지 마. 원문에 시각이 없으면 null로 적어줘. "
+                    f"날짜나 시각이 없으면 각각 dateExpression, timeExpression을 null로 두고 기본값을 원문 표현인 것처럼 적지 마. 둘 다 없으면 날짜와 시각을 만들지 마. "
+                    f"날짜가 모호하면 그 표현을 유지해줘. '조만간'을 날짜가 없는 것으로 바꾸거나 '3시쯤'을 시각이 없는 것으로 바꾸지 마. "
+                    f"시각이 없으면 서버가 18:00을 적용하고, 날짜 없이 시각만 있으면 기준일을 적용해. 오전과 오후가 없는 한글 1~7시는 오후, 8~11시는 오전, 12시는 정오로 처리해. "
+                    f"dateExpression에는 날짜 표현을, timeExpression에는 시각 표현을 조사와 조건을 포함해 원문에서 그대로 복사해줘. 표현의 정규화와 기본값 적용은 서버가 담당해. 날짜와 시각이 함께 있으면 각각 분리하되 원문에 없는 단어를 추가하지 마. "
                     f"예를 들어 '다음 주 월요일 오전 10시'에서는 '다음 주 월요일'을 복사하고 계산한 날짜로 바꾸지 마. "
                     f"일정 내용은 '제출', '완성'과 같이 일정표에 적는 것처럼 만들어줘 일정 내용에는 날짜 정보를 절대 포함하시키지 마. "
-                    f"일정이 '오늘', '내일', '다음 주', '다음주 목요일'과 같은 상대적인 표현일 경우, 오늘의 날짜({reference_date_text})를 기준으로 해당 날짜를 올바른 LocalDateTime 형식으로 환산해줘. "
+                    f"일정이 '오늘', '내일', '다음 주', '다음주 목요일'과 같은 상대적인 표현일 경우, 오늘의 날짜({reference_date_text})를 기준으로 해당 날짜를 환산하되 원문에 없는 시각을 만들지 마. "
                     f"만약 일정 후보가 전혀 없다면 빈 리스트로 반환해."
                 )
             },
@@ -49,6 +59,7 @@ class MeetingSummarizer:
         ]
         state = self.workflow.invoke({
             'messages': messages, 'input_text': input_text, 'meeting_date': reference_date_text,
+            'request_datetime': requested_at.isoformat(),
         })
         result = state['result']
         return {

@@ -15,7 +15,7 @@ def candidate(**changes):
     return {
         'extractedScheduleContent': '리뷰', 'extractedScheduleDate': '2026-09-26T10:00:00',
         'dateExpression': '내일 오전 10시', 'status': 'confirmed',
-        'eventId': changes.get('extractedScheduleContent', '리뷰'), 'evidence': '내일 오전 10시 리뷰를 확정합니다.', **changes,
+        'eventId': changes.get('extractedScheduleContent', '리뷰'), 'timeExpression': '오전 10시' if changes.get('status', 'confirmed') == 'confirmed' else None, 'evidence': '내일 오전 10시 리뷰를 확정합니다.', **changes,
     }
 
 
@@ -61,11 +61,12 @@ class ScheduleCandidatesTest(unittest.TestCase):
                 self.assertEqual(caught.exception.errors()[0]['loc'], ('schedules', 0, name))
                 self.assertEqual(caught.exception.errors()[0]['type'], 'missing')
 
-    def test_confirmed_candidate_requires_both_date_fields(self):
+    def test_confirmed_candidate_accepts_missing_fields_for_rule_based_completion(self):
         for fields in [{'extractedScheduleDate': None}, {'dateExpression': None}]:
             with self.subTest(fields=fields):
-                with self.assertRaisesRegex(ValidationError, '확정 일정에는 날짜와 원문 날짜 표현이 필요'):
-                    MeetingSummarizer.validate_response(response([candidate(**fields)]), SOURCE)
+                value = candidate(**fields)
+                result = MeetingSummarizer.validate_response(response([value]), SOURCE)
+                self.assertEqual(result['schedules'], [value])
 
     def test_unconfirmed_candidates_cannot_supply_invented_dates(self):
         for status in ['tentative', 'cancelled']:

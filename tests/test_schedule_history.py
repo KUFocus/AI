@@ -8,7 +8,7 @@ from schedule_history import resolve_schedule_history
 
 def decision(status, evidence, expression=None, timestamp=None, content='리뷰'):
     return {
-        'status': status, 'evidence': evidence, 'dateExpression': expression,
+        'status': status, 'timeExpression': None, 'evidence': evidence, 'dateExpression': expression,
         'extractedScheduleDate': timestamp, 'extractedScheduleContent': content,
     }
 

@@ -11,7 +11,7 @@ from summarization import MeetingSummarizer
 
 def decision(status, quote, expression=None, day=None, event_id='review'):
     return {
-        'eventId': event_id, 'status': status, 'evidence': quote,
+        'eventId': event_id, 'status': status, 'timeExpression': '오전 10시' if status == 'confirmed' else None, 'evidence': quote,
         'dateExpression': expression, 'extractedScheduleDate': f'{day}T10:00:00' if day else None,
         'extractedScheduleContent': '리뷰',
     }
@@ -57,7 +57,7 @@ class ScheduleHistoryWorkflowTest(unittest.TestCase):
         }])
 
     def test_cancelled_history_does_not_validate_obsolete_date(self):
-        obsolete = decision('confirmed', '이번 주 일요일 리뷰를 확정합니다.', '이번 주 일요일', '2026-09-27')
+        obsolete = decision('confirmed', '이번 주 일요일 오전 10시 리뷰를 확정합니다.', '이번 주 일요일', '2026-09-27')
         model = Mock(return_value=response([obsolete, self.cancel]))
         source = obsolete['evidence'] + '\n' + self.cancel['evidence']
         with patch('summary_workflow.resolve_schedule_date') as tool:
@@ -77,10 +77,10 @@ class ScheduleHistoryWorkflowTest(unittest.TestCase):
             }, stream_mode='updates'))
         self.assertEqual([next(iter(update)) for update in updates], [
             'generate', 'validate', 'resolve_histories', 'repair',
-            'generate', 'validate', 'resolve_histories', 'normalize_dates',
+            'generate', 'validate', 'resolve_histories', 'normalize_dates', 'normalize_times',
         ])
         self.assertIsNone(updates[2]['resolve_histories']['result'])
-        self.assertEqual(updates[-2]['resolve_histories']['result']['schedules'][0]['dateExpression'], '모레')
+        self.assertEqual(updates[-3]['resolve_histories']['result']['schedules'][0]['dateExpression'], '모레')
         self.assertIn('일정 식별자 review', model.call_args.args[0][-1]['content'])
         self.assertEqual(model.call_count, 2)
 
@@ -109,7 +109,7 @@ class ScheduleHistoryWorkflowTest(unittest.TestCase):
         self.assertEqual(model.call_count, 2)
 
     def test_unsupported_date_after_history_repair_still_exhausts_budget(self):
-        changed = decision('confirmed', '이번 주 일요일로 다시 확정합니다.', '이번 주 일요일', '2026-09-27')
+        changed = decision('confirmed', '이번 주 일요일 오전 10시로 다시 확정합니다.', '이번 주 일요일', '2026-09-27')
         source = self.first['evidence'] + '\n' + changed['evidence']
         overlap = {**self.first, 'evidence': source}
         model = Mock(side_effect=[response([overlap, changed]), response([self.first, changed])])
