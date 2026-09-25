@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 
 
 class ExtractedSchedule(BaseModel):
@@ -30,5 +30,5 @@ class ExtractedSchedule(BaseModel):
 
 
 class SummaryResponse(BaseModel):
-    summarizedText: str = ''
-    schedules: list[ExtractedSchedule] = Field(default_factory=list)
+    summarizedText: str
+    schedules: list[ExtractedSchedule]

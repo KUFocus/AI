@@ -39,7 +39,7 @@ class MeetingSummarizerTest(unittest.TestCase):
 
         def complete(messages):
             prompts.append(messages[0]["content"])
-            return '{}'
+            return '{"summarizedText": "회의 요약", "schedules": []}'
 
         summarizer = MeetingSummarizer(complete, now=lambda: datetime(2026, 9, 27))
         summarizer.summarize("내일 제출한다.", meeting_date=date(2026, 9, 25))
@@ -57,15 +57,18 @@ class MeetingSummarizerTest(unittest.TestCase):
             "summarizedText": "회의 요약", "schedules": [],
         })
 
-    def test_keeps_existing_defaults_for_missing_fields(self):
-        for response, expected in [
-            ('{}', {"summarizedText": "", "schedules": []}),
-            ('{"summarizedText": "회의 요약"}', {"summarizedText": "회의 요약", "schedules": []}),
-            ('{"schedules": []}', {"summarizedText": "", "schedules": []}),
+    def test_missing_response_fields_are_rejected(self):
+        for response, missing_fields in [
+            ('{}', {'summarizedText', 'schedules'}),
+            ('{"summarizedText": "회의 요약"}', {'schedules'}),
+            ('{"schedules": []}', {'summarizedText'}),
         ]:
             with self.subTest(response=response):
                 summarizer = MeetingSummarizer(lambda messages: response)
-                self.assertEqual(summarizer.summarize("회의 내용"), expected)
+                with self.assertRaises(ValidationError) as caught:
+                    summarizer.summarize("회의 내용")
+                self.assertEqual({error['loc'][0] for error in caught.exception.errors()}, missing_fields)
+                self.assertTrue(all(error['type'] == 'missing' for error in caught.exception.errors()))
 
     def test_invalid_json_is_not_returned_as_success(self):
         summarizer = MeetingSummarizer(lambda messages: '요약 결과입니다.')
@@ -86,6 +89,8 @@ class MeetingSummarizerTest(unittest.TestCase):
             [],
         ]:
             with self.subTest(payload=payload):
+                if isinstance(payload, dict):
+                    payload = {'summarizedText': '회의 요약', 'schedules': [], **payload}
                 summarizer = MeetingSummarizer(lambda messages: json.dumps(payload))
                 with self.assertRaises(ValidationError):
                     summarizer.summarize("회의 내용")
@@ -94,13 +99,13 @@ class MeetingSummarizerTest(unittest.TestCase):
         for value in ['', '   ', '\t\n', '\u3000']:
             with self.subTest(value=value):
                 schedule = {'extractedScheduleDate': '2026-09-28T15:00:00', 'extractedScheduleContent': value}
-                summarizer = MeetingSummarizer(lambda messages: json.dumps({'schedules': [schedule]}))
+                summarizer = MeetingSummarizer(lambda messages: json.dumps({'summarizedText': '회의 요약', 'schedules': [schedule]}))
                 with self.assertRaisesRegex(ValidationError, '일정 내용은 비어 있거나 공백만으로 이루어질 수 없습니다.'):
                     summarizer.summarize('회의 내용')
 
     def test_nonblank_schedule_content_is_preserved(self):
         schedule = {'extractedScheduleDate': '2026-09-28T15:00:00', 'extractedScheduleContent': '  디자인 리뷰\n자료 검토  '}
-        summarizer = MeetingSummarizer(lambda messages: json.dumps({'schedules': [schedule]}))
+        summarizer = MeetingSummarizer(lambda messages: json.dumps({'summarizedText': '회의 요약', 'schedules': [schedule]}))
 
         self.assertEqual(summarizer.summarize('회의 내용')['schedules'], [schedule])
 
@@ -113,7 +118,7 @@ class MeetingSummarizerTest(unittest.TestCase):
             '2026-09-28T10:00:00Z', '다음 주 월요일', '',
         ]:
             with self.subTest(value=value):
-                response = json.dumps({'schedules': [{
+                response = json.dumps({'summarizedText': '회의 요약', 'schedules': [{
                     'extractedScheduleDate': value,
                     'extractedScheduleContent': '디자인 리뷰',
                 }]})
@@ -125,7 +130,7 @@ class MeetingSummarizerTest(unittest.TestCase):
         for value in ['2028-02-29T10:00:00', '2026-09-28T10:00', '2026-09-28T10:00:00.123456789']:
             with self.subTest(value=value):
                 schedule = {'extractedScheduleDate': value, 'extractedScheduleContent': '디자인 리뷰'}
-                summarizer = MeetingSummarizer(lambda messages: json.dumps({'schedules': [schedule]}))
+                summarizer = MeetingSummarizer(lambda messages: json.dumps({'summarizedText': '회의 요약', 'schedules': [schedule]}))
                 result = summarizer.summarize('회의 내용')
                 self.assertEqual(result['schedules'], [schedule])
 
@@ -135,7 +140,7 @@ class MeetingSummarizerTest(unittest.TestCase):
 
         def complete(messages):
             prompts.append(messages[0]["content"])
-            return '{}'
+            return '{"summarizedText": "회의 요약", "schedules": []}'
 
         summarizer = MeetingSummarizer(complete, now=lambda: next(dates))
         summarizer.summarize("내일 제출한다.")

@@ -36,7 +36,7 @@ class SummaryRoutesTest(unittest.TestCase):
         })
 
     def test_meeting_date_is_used_in_model_prompt(self):
-        model = Mock(return_value='{}')
+        model = Mock(return_value='{"summarizedText": "회의 요약", "schedules": []}')
         client = self.create_client(model)
 
         response = client.post("/summarize_text", json={
@@ -65,7 +65,7 @@ class SummaryRoutesTest(unittest.TestCase):
         model.assert_not_called()
 
     def test_null_meeting_date_is_accepted_like_an_omitted_date(self):
-        model = Mock(return_value='{}')
+        model = Mock(return_value='{"summarizedText": "회의 요약", "schedules": []}')
         client = self.create_client(model)
 
         response = client.post("/summarize_text", json={
@@ -73,6 +73,7 @@ class SummaryRoutesTest(unittest.TestCase):
         })
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"summarizedText": "회의 요약", "schedules": []})
         model.assert_called_once()
 
     def test_empty_text_returns_400_without_calling_model(self):
@@ -100,7 +101,7 @@ class SummaryRoutesTest(unittest.TestCase):
         self.assertEqual(model.call_count, 1)
 
     def test_invalid_model_structure_returns_korean_error_without_retry(self):
-        model = Mock(return_value='{"schedules": "일정 없음"}')
+        model = Mock(return_value='{"summarizedText": "회의 요약", "schedules": "일정 없음"}')
         client = self.create_client(model)
 
         with self.assertLogs(client.application.logger, level="ERROR"):
@@ -109,6 +110,19 @@ class SummaryRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.get_json(), {"error": "회의 내용을 요약하지 못했습니다."})
         model.assert_called_once()
+
+    def test_missing_model_fields_return_error_without_retry(self):
+        for content in ['{}', '{"summarizedText": "회의 요약"}', '{"schedules": []}']:
+            with self.subTest(content=content):
+                model = Mock(return_value=content)
+                client = self.create_client(model)
+
+                with self.assertLogs(client.application.logger, level="ERROR"):
+                    response = client.post("/summarize_text", json={"text": "회의 내용"})
+
+                self.assertEqual(response.status_code, 500)
+                self.assertEqual(response.get_json(), {"error": "회의 내용을 요약하지 못했습니다."})
+                model.assert_called_once()
 
     def test_model_failure_keeps_existing_error_response(self):
         def unavailable_model(messages):
