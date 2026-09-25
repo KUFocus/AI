@@ -19,8 +19,7 @@ class SummaryRoutesTest(unittest.TestCase):
             "schedules": [{
                 "extractedScheduleDate": "2026-09-28T15:00:00",
                 "extractedScheduleContent": "디자인 리뷰"
-            }],
-            "extra": "반환하지 않는 모델 부가 정보"
+            }]
         }''')
 
         response = client.post("/summarize_text", json={"text": "회의 내용"})

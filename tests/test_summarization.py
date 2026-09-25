@@ -95,6 +95,23 @@ class MeetingSummarizerTest(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     summarizer.summarize("회의 내용")
 
+    def test_unexpected_response_fields_are_rejected(self):
+        for payload, location in [
+            ({'summarizedText': '회의 요약', 'schedules': [], 'extra': '부가 정보'}, ('extra',)),
+            ({'summarizedText': '회의 요약', 'schedules': [{
+                'extractedScheduleDate': '2026-09-28T15:00:00',
+                'extractedScheduleContent': '디자인 리뷰', 'extra': '부가 정보',
+            }]}, ('schedules', 0, 'extra')),
+        ]:
+            with self.subTest(location=location):
+                summarizer = MeetingSummarizer(lambda messages: json.dumps(payload))
+                with self.assertRaises(ValidationError) as caught:
+                    summarizer.summarize('회의 내용')
+                errors = caught.exception.errors()
+                self.assertEqual(len(errors), 1)
+                self.assertEqual(errors[0]['type'], 'extra_forbidden')
+                self.assertEqual(errors[0]['loc'], location)
+
     def test_blank_schedule_content_is_rejected(self):
         for value in ['', '   ', '\t\n', '\u3000']:
             with self.subTest(value=value):

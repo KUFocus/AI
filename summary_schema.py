@@ -1,10 +1,12 @@
 import re
 from datetime import datetime
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class ExtractedSchedule(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
     extractedScheduleDate: str
     extractedScheduleContent: str
 
@@ -30,5 +32,7 @@ class ExtractedSchedule(BaseModel):
 
 
 class SummaryResponse(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
     summarizedText: str
     schedules: list[ExtractedSchedule]
