@@ -65,6 +65,11 @@ class ScheduleCandidate(BaseModel):
         if self.status == 'confirmed':
             if self.extractedScheduleDate is None or self.dateExpression is None:
                 raise ValueError('확정 일정에는 날짜와 원문 날짜 표현이 필요합니다.')
+            if self.dateExpression not in self.evidence:
+                raise ValueError(
+                    '확정 일정의 날짜 표현이 근거 발언에 포함되어야 합니다. '
+                    '최종 결정의 날짜와 확정 발언을 함께 포함한 원문 구간을 확인해 주세요.'
+                )
         elif self.extractedScheduleDate is not None or self.dateExpression is not None:
             raise ValueError('미확정 또는 취소 일정의 날짜와 날짜 표현은 null이어야 합니다.')
         return self

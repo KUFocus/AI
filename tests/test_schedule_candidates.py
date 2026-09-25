@@ -89,6 +89,60 @@ class ScheduleCandidatesTest(unittest.TestCase):
         self.assertEqual(model.call_count, 2)
         self.assertIn('일정 상태는 confirmed, tentative, cancelled 중 하나여야 합니다.', model.call_args.args[0][-1]['content'])
 
+    def test_date_from_another_decision_cannot_be_combined_with_evidence(self):
+        for source in [
+            '리뷰는 내일 오전 10시로 제안합니다. 리뷰는 모레 오전 10시로 변경해서 확정합니다.',
+            '발표는 내일 오전 10시로 확정합니다. 리뷰는 모레 오전 10시로 확정합니다.',
+        ]:
+            with self.subTest(source=source):
+                value = candidate(evidence=source.split('. ')[1])
+                with self.assertRaisesRegex(ValidationError, '날짜 표현이 근거 발언에 포함되어야 합니다'):
+                    MeetingSummarizer.validate_response(response([value]), source)
+
+    def test_date_and_confirmation_can_be_quoted_across_adjacent_utterances(self):
+        quote = '민수: 리뷰는 내일 오전 10시로 할까요?\n지수: 네, 그 일정으로 확정합시다.'
+        source = f'지난 작업을 공유합니다.\n{quote}\n이후 배포 문제를 논의했습니다.'
+        model = Mock(return_value=response([candidate(evidence=quote)]))
+
+        result = MeetingSummarizer(model).summarize(source, meeting_date=date(2026, 9, 25))
+
+        self.assertEqual(result['schedules'], [{
+            'extractedScheduleDate': '2026-09-26T10:00:00', 'extractedScheduleContent': '리뷰',
+        }])
+        model.assert_called_once()
+
+    def test_mixed_old_date_and_new_confirmation_is_repaired_before_date_check(self):
+        quote = '리뷰는 모레 오전 10시로 변경해서 확정합니다.'
+        source = f'리뷰는 내일 오전 10시로 제안합니다. {quote}'
+        bad = candidate(evidence=quote)
+        good = candidate(evidence=quote, dateExpression='모레 오전 10시',
+                         extractedScheduleDate='2026-09-27T10:00:00')
+        model = Mock(side_effect=[response([bad]), response([good])])
+
+        with patch('summary_workflow.resolve_schedule_date') as tool:
+            tool.invoke.return_value = '2026-09-27'
+            with self.assertLogs('summary_workflow', level='WARNING'):
+                result = MeetingSummarizer(model).summarize(source, meeting_date=date(2026, 9, 25))
+
+        self.assertEqual(result['schedules'], [{
+            'extractedScheduleDate': '2026-09-27T10:00:00', 'extractedScheduleContent': '리뷰',
+        }])
+        self.assertEqual(model.call_count, 2)
+        self.assertIn('날짜 표현이 근거 발언에 포함되어야 합니다', model.call_args.args[0][-1]['content'])
+        tool.invoke.assert_called_once_with({
+            'expression': '모레 오전 10시', 'meeting_date': '2026-09-25',
+        })
+
+    def test_unrepaired_evidence_date_mismatch_is_not_returned(self):
+        source = '리뷰는 내일 오전 10시로 제안합니다. 모레 오전 10시로 변경 확정합니다.'
+        model = Mock(return_value=response([candidate(evidence='모레 오전 10시로 변경 확정합니다.')]))
+
+        with self.assertLogs('summary_workflow', level='WARNING'):
+            with self.assertRaisesRegex(ValidationError, '날짜 표현이 근거 발언에 포함되어야 합니다'):
+                MeetingSummarizer(model).summarize(source, meeting_date=date(2026, 9, 25))
+
+        self.assertEqual(model.call_count, 2)
+
 
 if __name__ == '__main__':
     unittest.main()

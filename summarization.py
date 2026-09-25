@@ -33,6 +33,8 @@ class MeetingSummarizer:
                     f"status는 확정이면 confirmed, 제안 또는 확인 대기이면 tentative, 취소이면 cancelled로 적어줘. "
                     f"날짜가 언급됐다는 이유만으로 확정하지 마. 변경 후 확정된 일정은 새 날짜를 사용하고 변경 전 일정은 별도로 반환하지 마. "
                     f"evidence에는 최종 상태를 판단한 근거 발언을 원문에서 그대로 복사해줘. "
+                    f"확정 일정의 evidence에는 dateExpression도 포함해야 해. 날짜와 확정 발언이 서로 다른 문장이면 필요한 연속된 원문 구간을 함께 복사해줘. "
+                    f"변경 전 날짜나 다른 일정의 날짜를 최종 확정 발언과 연결하지 마. 나중에 나온 변경 제안이 미확정이면 기존 확정을 자동으로 취소하지 마. "
                     f"tentative 또는 cancelled이면 extractedScheduleDate와 dateExpression은 null로 적고 날짜를 추측하지 마. "
                     f"dateExpression에는 시간을 제외한 날짜 표현을 원문에서 그대로 복사해 줘. "
                     f"예를 들어 '다음 주 월요일 오전 10시'에서는 '다음 주 월요일'을 복사하고 계산한 날짜로 바꾸지 마. "
