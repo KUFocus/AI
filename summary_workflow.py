@@ -47,6 +47,8 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
         checks = []
         errors = []
         for index, schedule in enumerate(state['result']['schedules']):
+            if schedule['status'] != 'confirmed':
+                continue
             try:
                 expected_date = resolve_schedule_date.invoke({
                     'expression': schedule['dateExpression'],
@@ -114,6 +116,7 @@ def validation_feedback(error: json.JSONDecodeError | ValidationError) -> str:
         'string_type': '문자열이어야 합니다.',
         'list_type': '목록이어야 합니다.',
         'model_type': '객체 형태여야 합니다.',
+        'literal_error': '일정 상태는 confirmed, tentative, cancelled 중 하나여야 합니다.',
     }
     feedback = []
     for item in error.errors(include_input=False, include_url=False):

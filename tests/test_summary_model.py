@@ -56,13 +56,15 @@ class OpenAISummaryModelTest(unittest.TestCase):
         self.assertEqual(set(schema["properties"]), {"summarizedText", "schedules"})
         self.assertEqual(schema["properties"]["summarizedText"]["type"], "string")
         self.assertEqual(schema["properties"]["schedules"]["type"], "array")
-        self.assertEqual(schema["properties"]["schedules"]["items"], {"$ref": "#/$defs/ExtractedSchedule"})
-        schedule = schema["$defs"]["ExtractedSchedule"]
+        self.assertEqual(schema["properties"]["schedules"]["items"], {"$ref": "#/$defs/ScheduleCandidate"})
+        schedule = schema["$defs"]["ScheduleCandidate"]
         self.assertEqual(schedule["type"], "object")
         self.assertIs(schedule["additionalProperties"], False)
-        self.assertEqual(set(schedule["required"]), {"extractedScheduleDate", "extractedScheduleContent", "dateExpression"})
-        self.assertEqual(set(schedule["properties"]), {"extractedScheduleDate", "extractedScheduleContent", "dateExpression"})
-        self.assertTrue(all(field["type"] == "string" for field in schedule["properties"].values()))
+        self.assertEqual(set(schedule["required"]), {"extractedScheduleDate", "extractedScheduleContent", "dateExpression", "status", "evidence"})
+        self.assertEqual(set(schedule["properties"]), {"extractedScheduleDate", "extractedScheduleContent", "dateExpression", "status", "evidence"})
+        self.assertEqual(schedule["properties"]["status"]["enum"], ["confirmed", "tentative", "cancelled"])
+        for name in ["extractedScheduleDate", "dateExpression"]:
+            self.assertEqual(schedule["properties"][name]["anyOf"], [{"type": "string"}, {"type": "null"}])
 
     def test_incomplete_refused_or_empty_response_is_rejected_without_retry(self):
         valid_json = '{"summarizedText": "회의 요약", "schedules": []}'

@@ -48,10 +48,12 @@ class SummaryWorkflowTest(unittest.TestCase):
         expected = {'summarizedText': '회의 요약', 'schedules': [{
             'extractedScheduleDate': '2026-09-28T10:00:00', 'extractedScheduleContent': '디자인 리뷰',
             'dateExpression': '다음 주 월요일',
+            'status': 'confirmed', 'evidence': '다음 주 월요일',
         }]}
         invalid_date = {'summarizedText': '회의 요약', 'schedules': [{
             'extractedScheduleDate': '2026-02-30T10:00:00', 'extractedScheduleContent': '디자인 리뷰',
             'dateExpression': '다음 주 월요일',
+            'status': 'confirmed', 'evidence': '다음 주 월요일',
         }]}
         messages = [{'role': 'system', 'content': '기준일: 2026-09-25'},
                     {'role': 'user', 'content': '다음 주 월요일 오전 10시에 디자인 리뷰를 한다.'}]
@@ -125,6 +127,7 @@ class SummaryWorkflowTest(unittest.TestCase):
             return json.dumps({'summarizedText': '회의 요약', 'schedules': [{
                 'dateExpression': '다음 주 월요일 오후 3시', 'extractedScheduleDate': f'{day}T15:00:00.123456789',
                 'extractedScheduleContent': '디자인 리뷰',
+                'status': 'confirmed', 'evidence': '다음 주 월요일 오후 3시',
             }]})
 
         generate = Mock(side_effect=[response('2026-10-02'), response('2026-09-28')])
@@ -155,6 +158,7 @@ class SummaryWorkflowTest(unittest.TestCase):
         invalid = json.dumps({'summarizedText': '회의 요약', 'schedules': [{
             'dateExpression': '내일', 'extractedScheduleDate': '2026-09-27T10:00:00',
             'extractedScheduleContent': '자료 제출',
+            'status': 'confirmed', 'evidence': '내일',
         }]})
         for responses, repair_enabled, calls in [
             ([invalid, invalid], True, 2), (['{}', invalid], True, 2), ([invalid], False, 1),
@@ -175,6 +179,7 @@ class SummaryWorkflowTest(unittest.TestCase):
         schedules = [{
             'dateExpression': expression, 'extractedScheduleDate': day + 'T10:00:00',
             'extractedScheduleContent': content,
+            'status': 'confirmed', 'evidence': expression,
         } for expression, day, content in [
             ('내일', '2026-09-26', '자료 제출'),
             ('2026년 9월 28일', '2026-09-28', '리뷰'),
@@ -204,6 +209,7 @@ class SummaryWorkflowTest(unittest.TestCase):
         payload = {'summarizedText': '회의 요약', 'schedules': [{
             'dateExpression': '2026년 9월 28일 오전 10시',
             'extractedScheduleDate': '2026-09-29T10:00:00', 'extractedScheduleContent': '리뷰',
+            'status': 'confirmed', 'evidence': '2026년 9월 28일 오전 10시',
         }]}
         generate = Mock(return_value=json.dumps(payload))
         workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response, repair_invalid_response=False)
@@ -219,6 +225,7 @@ class SummaryWorkflowTest(unittest.TestCase):
         payload = {'summarizedText': '회의 요약', 'schedules': [{
             'dateExpression': '내일', 'extractedScheduleDate': '2026-09-26T10:00:00',
             'extractedScheduleContent': '제출',
+            'status': 'confirmed', 'evidence': '내일',
         }]}
         generate = Mock(return_value=json.dumps(payload))
         workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response)
