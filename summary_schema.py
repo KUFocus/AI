@@ -8,6 +8,13 @@ class ExtractedSchedule(BaseModel):
     extractedScheduleDate: str
     extractedScheduleContent: str
 
+    @field_validator('extractedScheduleContent')
+    @classmethod
+    def validate_schedule_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError('일정 내용은 비어 있거나 공백만으로 이루어질 수 없습니다.')
+        return value
+
     @field_validator('extractedScheduleDate')
     @classmethod
     def validate_schedule_date(cls, value: str) -> str:

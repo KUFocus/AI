@@ -90,6 +90,20 @@ class MeetingSummarizerTest(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     summarizer.summarize("회의 내용")
 
+    def test_blank_schedule_content_is_rejected(self):
+        for value in ['', '   ', '\t\n', '\u3000']:
+            with self.subTest(value=value):
+                schedule = {'extractedScheduleDate': '2026-09-28T15:00:00', 'extractedScheduleContent': value}
+                summarizer = MeetingSummarizer(lambda messages: json.dumps({'schedules': [schedule]}))
+                with self.assertRaisesRegex(ValidationError, '일정 내용은 비어 있거나 공백만으로 이루어질 수 없습니다.'):
+                    summarizer.summarize('회의 내용')
+
+    def test_nonblank_schedule_content_is_preserved(self):
+        schedule = {'extractedScheduleDate': '2026-09-28T15:00:00', 'extractedScheduleContent': '  디자인 리뷰\n자료 검토  '}
+        summarizer = MeetingSummarizer(lambda messages: json.dumps({'schedules': [schedule]}))
+
+        self.assertEqual(summarizer.summarize('회의 내용')['schedules'], [schedule])
+
     def test_invalid_schedule_date_is_rejected(self):
         for value in [
             '2026-02-30T10:00:00', '2026-02-29T10:00:00',
