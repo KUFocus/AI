@@ -8,6 +8,45 @@ class ScheduleDateExpressionError(ValueError):
     """원문의 날짜 표현을 확정된 날짜로 해석할 수 없다."""
 
 
+class ScheduleTimeExpressionError(ValueError):
+    """원문의 시각 표현을 확정된 시각으로 해석할 수 없다."""
+
+
+@tool
+def resolve_schedule_time(expression: str) -> str:
+    """원문의 명확한 시각 표현을 24시간제 HH:MM:SS로 반환한다.
+
+    오전 10시, 오후 3시 30분, 오후 3시 반과 15시 같은 표현을 지원한다.
+    H:MM 또는 H:MM:SS는 24시간제로 해석한다.
+    오전이나 오후가 없는 1시부터 12시까지의 한글 표현은 추측하지 않는다.
+    날짜, 확정 여부, 다른 발언을 가리키는 표현은 이 도구가 판단하지 않는다.
+    """
+    text = expression.strip()
+    korean = re.fullmatch(
+        r'(?:(?P<period>오전|오후)\s*)?(?P<hour>[0-9]{1,2})\s*시'
+        r'(?:\s*(?:(?P<minute>[0-9]{1,2})\s*분|(?P<half>반)))?', text,
+    )
+    clock = re.fullmatch(
+        r'(?P<hour>[0-9]{1,2}):(?P<minute>[0-9]{2})(?::(?P<second>[0-9]{2}))?', text,
+    )
+    match = korean or clock
+    if match is None:
+        raise ScheduleTimeExpressionError('현재 지원하지 않는 시각 표현입니다.')
+
+    hour = int(match['hour'])
+    minute = 30 if korean and korean['half'] else int(match['minute'] or 0)
+    second = int(clock['second'] or 0) if clock else 0
+    period = korean['period'] if korean else None
+    valid_hour = 1 <= hour <= 12 if period else 0 <= hour <= 23
+    if not valid_hour or not 0 <= minute <= 59 or not 0 <= second <= 59:
+        raise ScheduleTimeExpressionError('원문 시각 표현에 유효하지 않은 시각이 포함되어 있습니다.')
+    if korean and period is None and 1 <= hour <= 12:
+        raise ScheduleTimeExpressionError('오전 또는 오후가 없어 시각을 확정할 수 없습니다.')
+    if period:
+        hour = hour % 12 + (12 if period == '오후' else 0)
+    return f'{hour:02d}:{minute:02d}:{second:02d}'
+
+
 @tool
 def resolve_schedule_date(expression: str, meeting_date: str) -> str:
     """원문의 명시적인 날짜 또는 상대 날짜를 YYYY-MM-DD로 반환한다.
