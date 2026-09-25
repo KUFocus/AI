@@ -37,6 +37,27 @@ class SummaryRoutesTest(unittest.TestCase):
             }],
         })
 
+    def test_tool_calculated_date_reaches_client_without_model_retry(self):
+        model = Mock(return_value='''{
+            "summarizedText": "회의 요약",
+            "schedules": [{
+                "extractedScheduleDate": "2026-10-02T15:00:00",
+                "extractedScheduleContent": "디자인 리뷰",
+                "dateExpression": "다음 주 월요일", "status": "confirmed",
+                "eventId": "review", "evidence": "다음 주 월요일 오후 3시에 디자인 리뷰를 한다."
+            }]
+        }''')
+        response = self.create_client(model).post('/summarize_text', json={
+            'text': '다음 주 월요일 오후 3시에 디자인 리뷰를 한다.', 'meetingDate': '2026-09-25',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {
+            'summarizedText': '회의 요약', 'schedules': [{
+                'extractedScheduleDate': '2026-09-28T15:00:00', 'extractedScheduleContent': '디자인 리뷰',
+            }],
+        })
+        model.assert_called_once()
+
     def test_meeting_date_is_used_in_model_prompt(self):
         model = Mock(return_value='{"summarizedText": "회의 요약", "schedules": []}')
         client = self.create_client(model)

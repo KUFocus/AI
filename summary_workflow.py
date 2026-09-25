@@ -70,9 +70,10 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
             'schedule_indexes': indexes, 'validation_error': None,
         }
 
-    def validate_dates(state: SummaryState):
+    def normalize_dates(state: SummaryState):
         checks = []
         errors = []
+        schedules = []
         for index, schedule in zip(state['schedule_indexes'], state['result']['schedules'], strict=True):
             try:
                 expected_date = resolve_schedule_date.invoke({
@@ -88,24 +89,29 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
                 )
                 continue
 
-            actual_date = schedule['extractedScheduleDate'].split('T')[0]
+            actual_date, clock = schedule['extractedScheduleDate'].split('T')
             matches = actual_date == expected_date
-            checks.append({
-                'schedule_index': index, 'status': 'matched' if matches else 'mismatch',
+            check = {
+                'schedule_index': index, 'status': 'matched' if matches else 'normalized',
                 'expected_date': expected_date,
-            })
+            }
             if not matches:
-                errors.append(
-                    f'schedules.{index}.extractedScheduleDate: '
-                    f"회의 기준일 {state['meeting_date']}에서 '{schedule['dateExpression']}'을 "
-                    f'계산한 날짜는 {expected_date}이지만 응답 날짜는 {actual_date}입니다.'
+                check['original_date'] = actual_date
+                logger.info(
+                    '일정 %s의 날짜를 원문과 회의 기준일에 따라 보정했습니다. %s -> %s',
+                    index, actual_date, expected_date,
                 )
+            checks.append(check)
+            schedules.append({**schedule, 'extractedScheduleDate': f'{expected_date}T{clock}'})
         if errors:
             feedback = '\n'.join(errors)
             if state['attempts'] >= max_attempts:
                 raise ValueError(feedback)
             return {'result': None, 'validation_error': feedback, 'date_checks': checks}
-        return {'validation_error': None, 'date_checks': checks}
+        return {
+            'result': {**state['result'], 'schedules': schedules},
+            'validation_error': None, 'date_checks': checks,
+        }
 
     def repair(state: SummaryState):
         logger.warning('모델 응답 검증에 실패하여 한 번 수정을 요청합니다. %s', state['validation_error'])
@@ -123,13 +129,13 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
     graph.add_node('generate', generate)
     graph.add_node('validate', validate)
     graph.add_node('resolve_histories', resolve_histories)
-    graph.add_node('validate_dates', validate_dates)
+    graph.add_node('normalize_dates', normalize_dates)
     graph.add_node('repair', repair)
     graph.add_edge(START, 'generate')
     graph.add_edge('generate', 'validate')
     graph.add_conditional_edges('validate', route_after_validation, {'repair': 'repair', 'end': 'resolve_histories'})
-    graph.add_conditional_edges('resolve_histories', route_after_validation, {'repair': 'repair', 'end': 'validate_dates'})
-    graph.add_conditional_edges('validate_dates', route_after_validation, {'repair': 'repair', 'end': END})
+    graph.add_conditional_edges('resolve_histories', route_after_validation, {'repair': 'repair', 'end': 'normalize_dates'})
+    graph.add_conditional_edges('normalize_dates', route_after_validation, {'repair': 'repair', 'end': END})
     graph.add_edge('repair', 'generate')
     return graph.compile()
 

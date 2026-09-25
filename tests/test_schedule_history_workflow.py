@@ -77,7 +77,7 @@ class ScheduleHistoryWorkflowTest(unittest.TestCase):
             }, stream_mode='updates'))
         self.assertEqual([next(iter(update)) for update in updates], [
             'generate', 'validate', 'resolve_histories', 'repair',
-            'generate', 'validate', 'resolve_histories', 'validate_dates',
+            'generate', 'validate', 'resolve_histories', 'normalize_dates',
         ])
         self.assertIsNone(updates[2]['resolve_histories']['result'])
         self.assertEqual(updates[-2]['resolve_histories']['result']['schedules'][0]['dateExpression'], '모레')
@@ -96,13 +96,25 @@ class ScheduleHistoryWorkflowTest(unittest.TestCase):
                     )
                 self.assertEqual(model.call_count, expected_calls)
 
-    def test_date_error_after_history_repair_does_not_get_another_retry(self):
+    def test_date_is_normalized_after_history_repair_without_another_retry(self):
         source = self.first['evidence'] + '\n' + self.changed['evidence']
         bad_history = response([{**self.first, 'evidence': source}, self.changed])
         bad_date = {**self.changed, 'extractedScheduleDate': '2026-09-28T10:00:00'}
         model = Mock(side_effect=[bad_history, response([self.first, bad_date])])
         with self.assertLogs('summary_workflow', level='WARNING'):
-            with self.assertRaisesRegex(ValueError, 'schedules.1.extractedScheduleDate: .*계산한 날짜는 2026-09-27'):
+            result = MeetingSummarizer(model).summarize(source, meeting_date=date(2026, 9, 25))
+        self.assertEqual(result['schedules'], [{
+            'extractedScheduleDate': '2026-09-27T10:00:00', 'extractedScheduleContent': '리뷰',
+        }])
+        self.assertEqual(model.call_count, 2)
+
+    def test_unsupported_date_after_history_repair_still_exhausts_budget(self):
+        changed = decision('confirmed', '이번 주 일요일로 다시 확정합니다.', '이번 주 일요일', '2026-09-27')
+        source = self.first['evidence'] + '\n' + changed['evidence']
+        overlap = {**self.first, 'evidence': source}
+        model = Mock(side_effect=[response([overlap, changed]), response([self.first, changed])])
+        with self.assertLogs('summary_workflow', level='WARNING'):
+            with self.assertRaisesRegex(ValueError, 'schedules.1.dateExpression: 현재 지원하지 않는 날짜 표현'):
                 MeetingSummarizer(model).summarize(source, meeting_date=date(2026, 9, 25))
         self.assertEqual(model.call_count, 2)
 
