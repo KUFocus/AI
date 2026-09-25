@@ -1,6 +1,6 @@
 import json
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 
 from summarization import MeetingSummarizer
 
@@ -31,6 +31,20 @@ class MeetingSummarizerTest(unittest.TestCase):
             "role": "user",
             "content": "다음 주 월요일 오후 3시에 디자인 리뷰를 진행한다.",
         })
+
+    def test_meeting_date_overrides_processing_date_only_for_that_request(self):
+        prompts = []
+
+        def complete(messages):
+            prompts.append(messages[0]["content"])
+            return '{}'
+
+        summarizer = MeetingSummarizer(complete, now=lambda: datetime(2026, 9, 27))
+        summarizer.summarize("내일 제출한다.", meeting_date=date(2026, 9, 25))
+        summarizer.summarize("내일 제출한다.")
+
+        self.assertIn("오늘의 날짜(2026-09-25)", prompts[0])
+        self.assertIn("오늘의 날짜(2026-09-27)", prompts[1])
 
     def test_accepts_json_code_block_and_surrounding_whitespace(self):
         summarizer = MeetingSummarizer(

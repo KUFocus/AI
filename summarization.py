@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import date, datetime
 
 
 logger = logging.getLogger(__name__)
@@ -11,8 +11,9 @@ class MeetingSummarizer:
         self.complete = complete
         self.now = now
 
-    def summarize(self, input_text):
-        today_date = self.now().strftime("%Y-%m-%d")
+    def summarize(self, input_text, meeting_date: date | None = None):
+        reference_date = meeting_date if meeting_date is not None else self.now().date()
+        reference_date_text = reference_date.strftime("%Y-%m-%d")
         messages = [
             {
                 "role": "system",
@@ -23,7 +24,7 @@ class MeetingSummarizer:
                     f"각 일정은 'extractedScheduleDate' (LocalDateTime 형식, 예: 2024-11-06T12:49:15), "
                     f"'extractedScheduleContent'로 JSON 객체를 만들어 줘. "
                     f"일정 내용은 '제출', '완성'과 같이 일정표에 적는 것처럼 만들어줘 일정 내용에는 날짜 정보를 절대 포함하시키지 마. "
-                    f"일정이 '오늘', '내일', '다음 주', '다음주 목요일'과 같은 상대적인 표현일 경우, 오늘의 날짜({today_date})를 기준으로 해당 날짜를 올바른 LocalDateTime 형식으로 환산해줘. "
+                    f"일정이 '오늘', '내일', '다음 주', '다음주 목요일'과 같은 상대적인 표현일 경우, 오늘의 날짜({reference_date_text})를 기준으로 해당 날짜를 올바른 LocalDateTime 형식으로 환산해줘. "
                     f"만약 일정이 없다면 빈 리스트로 반환해."
                 )
             },
