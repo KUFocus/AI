@@ -3,6 +3,7 @@ import logging
 from datetime import date, datetime
 
 from summary_schema import SummaryResponse
+from summary_workflow import build_summary_workflow
 
 
 logger = logging.getLogger(__name__)
@@ -12,6 +13,7 @@ class MeetingSummarizer:
     def __init__(self, complete, now=datetime.now):
         self.complete = complete
         self.now = now
+        self.workflow = build_summary_workflow(self.generate_response, self.validate_response)
 
     def summarize(self, input_text, meeting_date: date | None = None):
         reference_date = meeting_date if meeting_date is not None else self.now().date()
@@ -32,8 +34,8 @@ class MeetingSummarizer:
             },
             {"role": "user", "content": input_text}
         ]
-        response_content = self.generate_response(messages)
-        return self.validate_response(response_content)
+        state = self.workflow.invoke({'messages': messages})
+        return state['result']
 
     def generate_response(self, messages) -> str:
         response_content = self.complete(messages)
