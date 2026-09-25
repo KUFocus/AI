@@ -32,9 +32,17 @@ class MeetingSummarizer:
             },
             {"role": "user", "content": input_text}
         ]
-        response_content = self.complete(messages).strip()
-        logger.info("모델 응답: %s", response_content)
+        response_content = self.generate_response(messages)
+        return self.validate_response(response_content)
 
+    def generate_response(self, messages) -> str:
+        response_content = self.complete(messages)
+        logger.info("모델 응답: %s", response_content)
+        return response_content
+
+    @staticmethod
+    def validate_response(response_content: str) -> dict:
+        response_content = response_content.strip()
         if response_content.startswith("```json") and response_content.endswith("```"):
             response_content = response_content[7:-3].strip()
 
