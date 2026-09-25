@@ -130,7 +130,7 @@ class MeetingSummarizerTest(unittest.TestCase):
         schedule = {'extractedScheduleDate': '2026-09-28T15:00:00', 'extractedScheduleContent': '  디자인 리뷰\n자료 검토  '}
         summarizer = MeetingSummarizer(lambda messages: json.dumps({'summarizedText': '회의 요약', 'schedules': [{**schedule, 'dateExpression': '다음 주 월요일'}]}))
 
-        self.assertEqual(summarizer.summarize('다음 주 월요일 회의 내용')['schedules'], [schedule])
+        self.assertEqual(summarizer.summarize('다음 주 월요일 회의 내용', meeting_date=date(2026, 9, 25))['schedules'], [schedule])
 
     def test_invalid_schedule_date_is_rejected(self):
         for value in [
@@ -195,7 +195,9 @@ class MeetingSummarizerTest(unittest.TestCase):
         good = {'summarizedText': '회의 요약', 'schedules': [{**schedule, 'dateExpression': '다음 주 월요일'}]}
         model = Mock(side_effect=[json.dumps(bad), json.dumps(good)])
         with self.assertLogs('summary_workflow', level='WARNING'):
-            result = MeetingSummarizer(model).summarize('다음 주 월요일 오후 3시에 디자인 리뷰를 한다.')
+            result = MeetingSummarizer(model).summarize(
+                '다음 주 월요일 오후 3시에 디자인 리뷰를 한다.', meeting_date=date(2026, 9, 25),
+            )
 
         self.assertEqual(result, {'summarizedText': '회의 요약', 'schedules': [schedule]})
         self.assertEqual(model.call_count, 2)
@@ -226,6 +228,22 @@ class MeetingSummarizerTest(unittest.TestCase):
 
         self.assertIn("오늘의 날짜(2026-09-25)", prompts[0])
         self.assertIn("오늘의 날짜(2026-09-26)", prompts[1])
+
+    def test_date_tool_uses_each_requests_reference_including_current_date_fallback(self):
+        def response(day):
+            return json.dumps({'summarizedText': '회의 요약', 'schedules': [{
+                'dateExpression': '내일', 'extractedScheduleDate': day + 'T10:00:00',
+                'extractedScheduleContent': '제출',
+            }]})
+
+        model = Mock(side_effect=[response('2026-09-26'), response('2026-09-28')])
+        summarizer = MeetingSummarizer(model, now=lambda: datetime(2026, 9, 27))
+        first = summarizer.summarize('내일 오전 10시에 제출한다.', meeting_date=date(2026, 9, 25))
+        second = summarizer.summarize('내일 오전 10시에 제출한다.')
+
+        self.assertEqual(first['schedules'][0]['extractedScheduleDate'], '2026-09-26T10:00:00')
+        self.assertEqual(second['schedules'][0]['extractedScheduleDate'], '2026-09-28T10:00:00')
+        self.assertEqual(model.call_count, 2)
 
 
 if __name__ == "__main__":

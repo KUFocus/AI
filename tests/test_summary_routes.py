@@ -23,7 +23,9 @@ class SummaryRoutesTest(unittest.TestCase):
             }]
         }''')
 
-        response = client.post("/summarize_text", json={"text": "다음 주 월요일 오후 3시에 디자인 리뷰를 한다."})
+        response = client.post("/summarize_text", json={
+            "text": "다음 주 월요일 오후 3시에 디자인 리뷰를 한다.", "meetingDate": "2026-09-25",
+        })
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "application/json")

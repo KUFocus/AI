@@ -4,6 +4,10 @@ from datetime import date, timedelta
 from langchain_core.tools import tool
 
 
+class UnsupportedRelativeDateError(ValueError):
+    """날짜 계산 도구가 지원하지 않는 표현이다."""
+
+
 @tool
 def resolve_relative_date(expression: str, meeting_date: str) -> str:
     """회의 기준일로 오늘, 내일, 모레, 다음 주 요일을 계산해 YYYY-MM-DD로 반환한다.
@@ -26,7 +30,7 @@ def resolve_relative_date(expression: str, meeting_date: str) -> str:
     else:
         match = re.fullmatch(r'다음주([월화수목금토일])요일', normalized)
         if not match:
-            raise ValueError('현재 지원하지 않는 상대 날짜 표현입니다.')
+            raise UnsupportedRelativeDateError('현재 지원하지 않는 상대 날짜 표현입니다.')
         weekday = '월화수목금토일'.index(match.group(1))
         days = 7 - reference_date.weekday() + weekday
 

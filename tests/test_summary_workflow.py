@@ -1,6 +1,6 @@
 import json
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from pydantic import ValidationError
 
@@ -63,10 +63,12 @@ class SummaryWorkflowTest(unittest.TestCase):
                 generate = Mock(side_effect=[invalid, json.dumps(expected)])
                 workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response)
                 with self.assertLogs('summary_workflow', level='WARNING'):
-                    updates = list(workflow.stream({'messages': messages, 'input_text': messages[1]['content']}, stream_mode='updates'))
+                    updates = list(workflow.stream({
+                        'messages': messages, 'input_text': messages[1]['content'], 'meeting_date': '2026-09-25',
+                    }, stream_mode='updates'))
 
-                self.assertEqual([next(iter(update)) for update in updates], ['generate', 'validate', 'repair', 'generate', 'validate'])
-                self.assertEqual(updates[-1]['validate'], {'result': expected, 'validation_error': None})
+                self.assertEqual([next(iter(update)) for update in updates], ['generate', 'validate', 'repair', 'generate', 'validate', 'validate_dates'])
+                self.assertEqual(updates[-2]['validate'], {'result': expected, 'validation_error': None})
                 self.assertIsNone(updates[1]['validate']['result'])
                 self.assertEqual(generate.call_count, 2)
                 original = generate.call_args_list[0].args[0]
@@ -116,6 +118,98 @@ class SummaryWorkflowTest(unittest.TestCase):
         with self.assertRaises(TypeError) as caught:
             workflow.invoke({'messages': [{'role': 'user', 'content': '회의 내용'}], 'input_text': '회의 내용'})
         self.assertIs(caught.exception, error)
+        generate.assert_called_once()
+
+    def test_relative_date_mismatch_is_repaired_using_request_reference_date(self):
+        def response(day):
+            return json.dumps({'summarizedText': '회의 요약', 'schedules': [{
+                'dateExpression': '다음 주 월요일', 'extractedScheduleDate': f'{day}T15:00:00.123456789',
+                'extractedScheduleContent': '디자인 리뷰',
+            }]})
+
+        generate = Mock(side_effect=[response('2026-09-29'), response('2026-09-28')])
+        workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response)
+        original = '다음 주 월요일 오후 3시에 디자인 리뷰를 한다.'
+        with self.assertLogs('summary_workflow', level='WARNING'):
+            updates = list(workflow.stream({
+                'messages': [{'role': 'user', 'content': original}],
+                'input_text': original, 'meeting_date': '2026-09-25',
+            }, stream_mode='updates'))
+
+        self.assertEqual([next(iter(update)) for update in updates], [
+            'generate', 'validate', 'validate_dates', 'repair', 'generate', 'validate', 'validate_dates',
+        ])
+        self.assertIsNone(updates[2]['validate_dates']['result'])
+        self.assertEqual(updates[2]['validate_dates']['date_checks'][0]['status'], 'mismatch')
+        self.assertEqual(updates[-1]['validate_dates']['date_checks'], [{
+            'schedule_index': 0, 'status': 'matched', 'expected_date': '2026-09-28',
+        }])
+        self.assertEqual(updates[-2]['validate']['result']['schedules'][0]['extractedScheduleDate'],
+                         '2026-09-28T15:00:00.123456789')
+        self.assertEqual(generate.call_count, 2)
+        feedback = generate.call_args.args[0][-1]['content']
+        self.assertIn('회의 기준일 2026-09-25', feedback)
+        self.assertIn('계산한 날짜는 2026-09-28', feedback)
+
+    def test_date_mismatch_shares_existing_repair_budget(self):
+        invalid = json.dumps({'summarizedText': '회의 요약', 'schedules': [{
+            'dateExpression': '내일', 'extractedScheduleDate': '2026-09-27T10:00:00',
+            'extractedScheduleContent': '자료 제출',
+        }]})
+        for responses, repair_enabled, calls in [
+            ([invalid, invalid], True, 2), (['{}', invalid], True, 2), ([invalid], False, 1),
+        ]:
+            with self.subTest(responses=responses, repair_enabled=repair_enabled):
+                generate = Mock(side_effect=responses)
+                workflow = build_summary_workflow(
+                    generate, MeetingSummarizer.validate_response, repair_invalid_response=repair_enabled,
+                )
+                with self.assertRaisesRegex(ValueError, '계산한 날짜는 2026-09-26'):
+                    workflow.invoke({
+                        'messages': [{'role': 'user', 'content': '내일 자료 제출'}],
+                        'input_text': '내일 자료 제출', 'meeting_date': '2026-09-25',
+                    })
+                self.assertEqual(generate.call_count, calls)
+
+    def test_unsupported_dates_are_distinct_from_verified_dates(self):
+        schedules = [{
+            'dateExpression': expression, 'extractedScheduleDate': day + 'T10:00:00',
+            'extractedScheduleContent': content,
+        } for expression, day, content in [
+            ('내일', '2026-09-26', '자료 제출'),
+            ('2026년 9월 28일', '2026-09-28', '리뷰'),
+            ('이번 주 일요일', '2026-09-27', '점검'),
+        ]]
+        payload = {'summarizedText': '회의 요약', 'schedules': schedules}
+        generate = Mock(return_value=json.dumps(payload))
+        workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response)
+        original = '내일 자료 제출, 2026년 9월 28일 리뷰, 이번 주 일요일 점검.'
+        state = workflow.invoke({
+            'messages': [{'role': 'user', 'content': original}],
+            'input_text': original, 'meeting_date': '2026-09-25',
+        })
+        self.assertEqual(state['result'], payload)
+        self.assertEqual(state['date_checks'], [
+            {'schedule_index': 0, 'status': 'matched', 'expected_date': '2026-09-26'},
+            {'schedule_index': 1, 'status': 'unsupported'},
+            {'schedule_index': 2, 'status': 'unsupported'},
+        ])
+        generate.assert_called_once()
+
+    def test_tool_failure_is_not_treated_as_unsupported_or_repaired(self):
+        payload = {'summarizedText': '회의 요약', 'schedules': [{
+            'dateExpression': '내일', 'extractedScheduleDate': '2026-09-26T10:00:00',
+            'extractedScheduleContent': '제출',
+        }]}
+        generate = Mock(return_value=json.dumps(payload))
+        workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response)
+        with patch('summary_workflow.resolve_relative_date') as date_tool:
+            date_tool.invoke.side_effect = ValueError('계산 오류')
+            with self.assertRaisesRegex(ValueError, '계산 오류'):
+                workflow.invoke({
+                    'messages': [{'role': 'user', 'content': '내일 제출'}],
+                    'input_text': '내일 제출', 'meeting_date': '2026-09-25',
+                })
         generate.assert_called_once()
 
 

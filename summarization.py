@@ -20,7 +20,7 @@ class MeetingSummarizer:
 
     def summarize(self, input_text, meeting_date: date | None = None):
         reference_date = meeting_date if meeting_date is not None else self.now().date()
-        reference_date_text = reference_date.strftime("%Y-%m-%d")
+        reference_date_text = reference_date.isoformat()
         messages = [
             {
                 "role": "system",
@@ -39,7 +39,9 @@ class MeetingSummarizer:
             },
             {"role": "user", "content": input_text}
         ]
-        state = self.workflow.invoke({'messages': messages, 'input_text': input_text})
+        state = self.workflow.invoke({
+            'messages': messages, 'input_text': input_text, 'meeting_date': reference_date_text,
+        })
         result = state['result']
         return {
             'summarizedText': result['summarizedText'],
