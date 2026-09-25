@@ -5,7 +5,7 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
-from schedule_tools import UnsupportedRelativeDateError, resolve_relative_date
+from schedule_tools import ScheduleDateExpressionError, resolve_schedule_date
 
 
 logger = logging.getLogger(__name__)
@@ -48,13 +48,17 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
         errors = []
         for index, schedule in enumerate(state['result']['schedules']):
             try:
-                expected_date = resolve_relative_date.invoke({
+                expected_date = resolve_schedule_date.invoke({
                     'expression': schedule['dateExpression'],
                     'meeting_date': state['meeting_date'],
                 })
-            except UnsupportedRelativeDateError:
-                checks.append({'schedule_index': index, 'status': 'unsupported'})
-                logger.info('일정 %s의 날짜 표현은 도구가 지원하지 않아 날짜 계산 검증을 생략합니다.', index)
+            except ScheduleDateExpressionError as error:
+                checks.append({'schedule_index': index, 'status': 'unresolved'})
+                errors.append(
+                    f'schedules.{index}.dateExpression: {error} '
+                    '원문의 날짜 근거를 다시 확인해 주세요. '
+                    '임의의 날짜로 바꾸거나 불명확한 조건을 삭제하지 마세요.'
+                )
                 continue
 
             actual_date = schedule['extractedScheduleDate'].split('T')[0]

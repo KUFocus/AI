@@ -148,6 +148,24 @@ class SummaryRoutesTest(unittest.TestCase):
         self.assertEqual(response.get_json(), {"error": "회의 내용을 요약하지 못했습니다."})
         self.assertIn("internal provider details", "\n".join(logs.output))
 
+    def test_unresolved_date_returns_error_instead_of_empty_or_unverified_schedule(self):
+        model = Mock(return_value='''{
+            "summarizedText": "회의 요약",
+            "schedules": [{
+                "extractedScheduleDate": "2026-09-28T10:00:00",
+                "extractedScheduleContent": "리뷰",
+                "dateExpression": "다음 주"
+            }]
+        }''')
+        client = self.create_client(model)
+        with self.assertLogs(client.application.logger, level='ERROR'):
+            response = client.post('/summarize_text', json={
+                'text': '다음 주에 리뷰하기로 했다.', 'meetingDate': '2026-09-25',
+            })
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.get_json(), {'error': '회의 내용을 요약하지 못했습니다.'})
+        self.assertEqual(model.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
