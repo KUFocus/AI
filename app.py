@@ -16,8 +16,10 @@ from easyocr import Reader  # EasyOCR 불러오기
 import numpy as np
 import openai
 from dotenv import load_dotenv
-from datetime import datetime
 from tempfile import NamedTemporaryFile
+from summarization import MeetingSummarizer
+from summary_model import OpenAISummaryModel
+from summary_routes import create_summary_blueprint
 
 # .env 파일에서 환경 변수 로드
 load_dotenv()
@@ -78,59 +80,8 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.5], std=[0.5])
 ])
 
-@app.route('/summarize_text', methods=['POST'])
-def summarize_text():
-    app.logger.info("Received request for text summarization")
-    
-    data = request.json
-    input_text = data.get('text', '')
-    
-    if not input_text:
-        app.logger.error("No text provided for summarization")
-        return jsonify({'error': 'No text provided'}), 400
-
-    try:
-        # 현재 날짜를 YYYY-MM-DD 형식으로 가져옴
-        today_date = datetime.now().strftime("%Y-%m-%d")
-        
-        response = openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        f"다음 회의록 내용을 바탕으로 JSON 객체를 만들기 위해 두 가지 작업을 수행해줘. "
-                        f"첫째, 회의 내용에서 핵심을 요약하여 'summarizedText'로 반환해줘. 요약에 아래 일정 내용에 적을 일정과 관련된 내용은 절대 포함시키지 마. "
-                        f"둘째, 일정이 포함되어 있다면, 각 일정을 'schedules' 리스트로 반환해줘. 일정이 여러 번 언급되더라도, 최종적으로 확정된 일정만 하나씩 반환해줘. "
-                        f"각 일정은 'extractedScheduleDate' (LocalDateTime 형식, 예: 2024-11-06T12:49:15), "
-                        f"'extractedScheduleContent'로 JSON 객체를 만들어 줘. "
-                        f"일정 내용은 '제출', '완성'과 같이 일정표에 적는 것처럼 만들어줘 일정 내용에는 날짜 정보를 절대 포함하시키지 마. "
-                        f"일정이 '오늘', '내일', '다음 주', '다음주 목요일'과 같은 상대적인 표현일 경우, 오늘의 날짜({today_date})를 기준으로 해당 날짜를 올바른 LocalDateTime 형식으로 환산해줘. "
-                        f"만약 일정이 없다면 빈 리스트로 반환해."
-                    )
-                },
-                {"role": "user", "content": input_text}
-            ],
-            max_tokens=500,
-            temperature=0.7
-        )
-        response_content = response.choices[0].message.content.strip()
-        
-        app.logger.info(f"GPT response: {response_content}")
-        
-        # 응답에서 코드 블록을 제거
-        if response_content.startswith("```json") and response_content.endswith("```"):
-            response_content = response_content[7:-3].strip()
-
-        extracted_data = json.loads(response_content)
-        
-        return jsonify({
-            'summarizedText': extracted_data.get('summarizedText', ''),
-            'schedules': extracted_data.get('schedules', [])
-        }), 200
-    except Exception as e:
-        app.logger.error(f"Error in summarizing text: {str(e)}")
-        return jsonify({'error': 'Summarization failed'}), 500
+summarizer = MeetingSummarizer(OpenAISummaryModel(openai))
+app.register_blueprint(create_summary_blueprint(summarizer.summarize))
 
     
 # 음성 파일을 처리하는 엔드포인트
