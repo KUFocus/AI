@@ -47,9 +47,11 @@ class SummaryWorkflowTest(unittest.TestCase):
     def test_repairs_json_or_date_error_with_feedback_and_original_context(self):
         expected = {'summarizedText': '회의 요약', 'schedules': [{
             'extractedScheduleDate': '2026-09-28T10:00:00', 'extractedScheduleContent': '디자인 리뷰',
+            'dateExpression': '다음 주 월요일',
         }]}
         invalid_date = {'summarizedText': '회의 요약', 'schedules': [{
             'extractedScheduleDate': '2026-02-30T10:00:00', 'extractedScheduleContent': '디자인 리뷰',
+            'dateExpression': '다음 주 월요일',
         }]}
         messages = [{'role': 'system', 'content': '기준일: 2026-09-25'},
                     {'role': 'user', 'content': '다음 주 월요일 오전 10시에 디자인 리뷰를 한다.'}]

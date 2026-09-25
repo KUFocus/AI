@@ -18,7 +18,8 @@ class SummaryRoutesTest(unittest.TestCase):
             "summarizedText": "회의 요약",
             "schedules": [{
                 "extractedScheduleDate": "2026-09-28T15:00:00",
-                "extractedScheduleContent": "디자인 리뷰"
+                "extractedScheduleContent": "디자인 리뷰",
+                "dateExpression": "다음 주 월요일"
             }]
         }''')
 

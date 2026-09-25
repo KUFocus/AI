@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ExtractedSchedule(BaseModel):
@@ -9,6 +9,14 @@ class ExtractedSchedule(BaseModel):
 
     extractedScheduleDate: str
     extractedScheduleContent: str
+    dateExpression: str = Field(description='시간을 제외하고 원문에서 그대로 가져온 날짜 표현')
+
+    @field_validator('dateExpression')
+    @classmethod
+    def validate_date_expression(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError('원문의 날짜 표현은 비어 있거나 공백만으로 이루어질 수 없습니다.')
+        return value
 
     @field_validator('extractedScheduleContent')
     @classmethod
