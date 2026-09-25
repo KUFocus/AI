@@ -56,12 +56,12 @@ class OpenAISummaryModelTest(unittest.TestCase):
         self.assertEqual(set(schema["properties"]), {"summarizedText", "schedules"})
         self.assertEqual(schema["properties"]["summarizedText"]["type"], "string")
         self.assertEqual(schema["properties"]["schedules"]["type"], "array")
-        self.assertEqual(schema["properties"]["schedules"]["items"], {"$ref": "#/$defs/ScheduleCandidate"})
-        schedule = schema["$defs"]["ScheduleCandidate"]
+        self.assertEqual(schema["properties"]["schedules"]["items"], {"$ref": "#/$defs/ScheduleDecision"})
+        schedule = schema["$defs"]["ScheduleDecision"]
         self.assertEqual(schedule["type"], "object")
         self.assertIs(schedule["additionalProperties"], False)
-        self.assertEqual(set(schedule["required"]), {"extractedScheduleDate", "extractedScheduleContent", "dateExpression", "status", "evidence"})
-        self.assertEqual(set(schedule["properties"]), {"extractedScheduleDate", "extractedScheduleContent", "dateExpression", "status", "evidence"})
+        self.assertEqual(set(schedule["required"]), {"extractedScheduleDate", "extractedScheduleContent", "dateExpression", "status", "evidence", "eventId"})
+        self.assertEqual(set(schedule["properties"]), {"extractedScheduleDate", "extractedScheduleContent", "dateExpression", "status", "evidence", "eventId"})
         self.assertEqual(schedule["properties"]["status"]["enum"], ["confirmed", "tentative", "cancelled"])
         for name in ["extractedScheduleDate", "dateExpression"]:
             self.assertEqual(schedule["properties"][name]["anyOf"], [{"type": "string"}, {"type": "null"}])

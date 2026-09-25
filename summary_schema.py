@@ -11,8 +11,8 @@ class ScheduleCandidate(BaseModel):
     extractedScheduleDate: str | None
     extractedScheduleContent: str
     dateExpression: str | None = Field(description='확정 일정의 원문 날짜 표현. 미확정 또는 취소이면 null')
-    status: Literal['confirmed', 'tentative', 'cancelled'] = Field(description='회의 종료 시점의 최종 상태')
-    evidence: str = Field(description='최종 상태 판단의 근거가 되는 원문 발언을 그대로 복사')
+    status: Literal['confirmed', 'tentative', 'cancelled'] = Field(description='해당 발언 시점의 확정, 미확정 또는 취소 상태')
+    evidence: str = Field(description='해당 결정의 근거가 되는 원문 발언을 그대로 복사')
 
     @field_validator('evidence')
     @classmethod
@@ -68,15 +68,26 @@ class ScheduleCandidate(BaseModel):
             if self.dateExpression not in self.evidence:
                 raise ValueError(
                     '확정 일정의 날짜 표현이 근거 발언에 포함되어야 합니다. '
-                    '최종 결정의 날짜와 확정 발언을 함께 포함한 원문 구간을 확인해 주세요.'
+                    '해당 결정의 날짜와 확정 발언을 함께 포함한 원문 구간을 확인해 주세요.'
                 )
         elif self.extractedScheduleDate is not None or self.dateExpression is not None:
             raise ValueError('미확정 또는 취소 일정의 날짜와 날짜 표현은 null이어야 합니다.')
         return self
 
 
+class ScheduleDecision(ScheduleCandidate):
+    eventId: str = Field(description='요청 안에서 같은 일정의 결정들을 묶는 식별자')
+
+    @field_validator('eventId')
+    @classmethod
+    def validate_event_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError('일정 식별자는 비어 있거나 공백만으로 이루어질 수 없습니다.')
+        return value.strip()
+
+
 class SummaryResponse(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     summarizedText: str
-    schedules: list[ScheduleCandidate]
+    schedules: list[ScheduleDecision]

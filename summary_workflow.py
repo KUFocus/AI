@@ -5,6 +5,7 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 from pydantic import ValidationError
 
+from schedule_history import ScheduleHistoryError, resolve_schedule_history
 from schedule_tools import ScheduleDateExpressionError, resolve_schedule_date
 
 
@@ -20,6 +21,7 @@ class SummaryState(TypedDict, total=False):
     attempts: int
     validation_error: str | None
     date_checks: list[dict]
+    schedule_indexes: list[int]
 
 
 def build_summary_workflow(generate_response, validate_response, *, repair_invalid_response=True):
@@ -43,12 +45,35 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
     def route_after_validation(state: SummaryState):
         return 'repair' if state['validation_error'] else 'end'
 
+    def resolve_histories(state: SummaryState):
+        groups = {}
+        for index, decision in enumerate(state['result']['schedules']):
+            groups.setdefault(decision['eventId'], []).append((index, decision))
+        schedules = []
+        indexes = []
+        for event_id, entries in groups.items():
+            decisions = [{key: value for key, value in decision.items() if key != 'eventId'}
+                         for _, decision in entries]
+            try:
+                selected = resolve_schedule_history(decisions, state['input_text'])
+            except ScheduleHistoryError as error:
+                feedback = f'일정 식별자 {event_id}: {error}'
+                if state['attempts'] >= max_attempts:
+                    raise ScheduleHistoryError(feedback) from error
+                return {'result': None, 'validation_error': feedback, 'schedule_indexes': []}
+            if selected is not None:
+                schedules.append(selected)
+                indexes.append(next(index for index, decision in entries
+                                    if decision['evidence'] == selected['evidence']))
+        return {
+            'result': {**state['result'], 'schedules': schedules},
+            'schedule_indexes': indexes, 'validation_error': None,
+        }
+
     def validate_dates(state: SummaryState):
         checks = []
         errors = []
-        for index, schedule in enumerate(state['result']['schedules']):
-            if schedule['status'] != 'confirmed':
-                continue
+        for index, schedule in zip(state['schedule_indexes'], state['result']['schedules'], strict=True):
             try:
                 expected_date = resolve_schedule_date.invoke({
                     'expression': schedule['dateExpression'],
@@ -97,11 +122,13 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
     graph = StateGraph(SummaryState)
     graph.add_node('generate', generate)
     graph.add_node('validate', validate)
+    graph.add_node('resolve_histories', resolve_histories)
     graph.add_node('validate_dates', validate_dates)
     graph.add_node('repair', repair)
     graph.add_edge(START, 'generate')
     graph.add_edge('generate', 'validate')
-    graph.add_conditional_edges('validate', route_after_validation, {'repair': 'repair', 'end': 'validate_dates'})
+    graph.add_conditional_edges('validate', route_after_validation, {'repair': 'repair', 'end': 'resolve_histories'})
+    graph.add_conditional_edges('resolve_histories', route_after_validation, {'repair': 'repair', 'end': 'validate_dates'})
     graph.add_conditional_edges('validate_dates', route_after_validation, {'repair': 'repair', 'end': END})
     graph.add_edge('repair', 'generate')
     return graph.compile()

@@ -15,7 +15,7 @@ def candidate(**changes):
     return {
         'extractedScheduleContent': '리뷰', 'extractedScheduleDate': '2026-09-26T10:00:00',
         'dateExpression': '내일 오전 10시', 'status': 'confirmed',
-        'evidence': '내일 오전 10시 리뷰를 확정합니다.', **changes,
+        'eventId': changes.get('extractedScheduleContent', '리뷰'), 'evidence': '내일 오전 10시 리뷰를 확정합니다.', **changes,
     }
 
 

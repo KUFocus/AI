@@ -1,6 +1,10 @@
 from summary_schema import ScheduleCandidate
 
 
+class ScheduleHistoryError(ValueError):
+    pass
+
+
 def resolve_schedule_history(decisions: list[dict], input_text: str) -> dict | None:
     """같은 일정으로 묶인 결정들을 원문 순서로 적용해 남아 있는 확정본을 반환한다.
 
@@ -14,7 +18,7 @@ def resolve_schedule_history(decisions: list[dict], input_text: str) -> dict | N
         )
         start = input_text.find(candidate.evidence)
         if input_text.find(candidate.evidence, start + 1) != -1:
-            raise ValueError('같은 근거 발언이 원문에 반복되어 결정 순서를 확정할 수 없습니다.')
+            raise ScheduleHistoryError('같은 근거 발언이 원문에 반복되어 결정 순서를 확정할 수 없습니다.')
         ordered.append((start, start + len(candidate.evidence), candidate))
 
     ordered.sort(key=lambda item: item[0])
@@ -22,7 +26,7 @@ def resolve_schedule_history(decisions: list[dict], input_text: str) -> dict | N
     confirmed = None
     for start, end, candidate in ordered:
         if start < previous_end:
-            raise ValueError('결정의 근거 구간이 겹쳐 변경 순서를 확정할 수 없습니다.')
+            raise ScheduleHistoryError('결정의 근거 구간이 겹쳐 변경 순서를 확정할 수 없습니다.')
         previous_end = end
         if candidate.status == 'confirmed':
             confirmed = candidate

@@ -48,12 +48,12 @@ class SummaryWorkflowTest(unittest.TestCase):
         expected = {'summarizedText': '회의 요약', 'schedules': [{
             'extractedScheduleDate': '2026-09-28T10:00:00', 'extractedScheduleContent': '디자인 리뷰',
             'dateExpression': '다음 주 월요일',
-            'status': 'confirmed', 'evidence': '다음 주 월요일',
+            'status': 'confirmed', 'eventId': '디자인 리뷰', 'evidence': '다음 주 월요일',
         }]}
         invalid_date = {'summarizedText': '회의 요약', 'schedules': [{
             'extractedScheduleDate': '2026-02-30T10:00:00', 'extractedScheduleContent': '디자인 리뷰',
             'dateExpression': '다음 주 월요일',
-            'status': 'confirmed', 'evidence': '다음 주 월요일',
+            'status': 'confirmed', 'eventId': '디자인 리뷰', 'evidence': '다음 주 월요일',
         }]}
         messages = [{'role': 'system', 'content': '기준일: 2026-09-25'},
                     {'role': 'user', 'content': '다음 주 월요일 오전 10시에 디자인 리뷰를 한다.'}]
@@ -69,8 +69,8 @@ class SummaryWorkflowTest(unittest.TestCase):
                         'messages': messages, 'input_text': messages[1]['content'], 'meeting_date': '2026-09-25',
                     }, stream_mode='updates'))
 
-                self.assertEqual([next(iter(update)) for update in updates], ['generate', 'validate', 'repair', 'generate', 'validate', 'validate_dates'])
-                self.assertEqual(updates[-2]['validate'], {'result': expected, 'validation_error': None})
+                self.assertEqual([next(iter(update)) for update in updates], ['generate', 'validate', 'repair', 'generate', 'validate', 'resolve_histories', 'validate_dates'])
+                self.assertEqual(updates[-3]['validate'], {'result': expected, 'validation_error': None})
                 self.assertIsNone(updates[1]['validate']['result'])
                 self.assertEqual(generate.call_count, 2)
                 original = generate.call_args_list[0].args[0]
@@ -127,7 +127,7 @@ class SummaryWorkflowTest(unittest.TestCase):
             return json.dumps({'summarizedText': '회의 요약', 'schedules': [{
                 'dateExpression': '다음 주 월요일 오후 3시', 'extractedScheduleDate': f'{day}T15:00:00.123456789',
                 'extractedScheduleContent': '디자인 리뷰',
-                'status': 'confirmed', 'evidence': '다음 주 월요일 오후 3시',
+                'status': 'confirmed', 'eventId': '디자인 리뷰', 'evidence': '다음 주 월요일 오후 3시',
             }]})
 
         generate = Mock(side_effect=[response('2026-10-02'), response('2026-09-28')])
@@ -140,14 +140,14 @@ class SummaryWorkflowTest(unittest.TestCase):
             }, stream_mode='updates'))
 
         self.assertEqual([next(iter(update)) for update in updates], [
-            'generate', 'validate', 'validate_dates', 'repair', 'generate', 'validate', 'validate_dates',
+            'generate', 'validate', 'resolve_histories', 'validate_dates', 'repair', 'generate', 'validate', 'resolve_histories', 'validate_dates',
         ])
-        self.assertIsNone(updates[2]['validate_dates']['result'])
-        self.assertEqual(updates[2]['validate_dates']['date_checks'][0]['status'], 'mismatch')
+        self.assertIsNone(updates[3]['validate_dates']['result'])
+        self.assertEqual(updates[3]['validate_dates']['date_checks'][0]['status'], 'mismatch')
         self.assertEqual(updates[-1]['validate_dates']['date_checks'], [{
             'schedule_index': 0, 'status': 'matched', 'expected_date': '2026-09-28',
         }])
-        self.assertEqual(updates[-2]['validate']['result']['schedules'][0]['extractedScheduleDate'],
+        self.assertEqual(updates[-3]['validate']['result']['schedules'][0]['extractedScheduleDate'],
                          '2026-09-28T15:00:00.123456789')
         self.assertEqual(generate.call_count, 2)
         feedback = generate.call_args.args[0][-1]['content']
@@ -158,7 +158,7 @@ class SummaryWorkflowTest(unittest.TestCase):
         invalid = json.dumps({'summarizedText': '회의 요약', 'schedules': [{
             'dateExpression': '내일', 'extractedScheduleDate': '2026-09-27T10:00:00',
             'extractedScheduleContent': '자료 제출',
-            'status': 'confirmed', 'evidence': '내일',
+            'status': 'confirmed', 'eventId': '자료 제출', 'evidence': '내일',
         }]})
         for responses, repair_enabled, calls in [
             ([invalid, invalid], True, 2), (['{}', invalid], True, 2), ([invalid], False, 1),
@@ -179,7 +179,7 @@ class SummaryWorkflowTest(unittest.TestCase):
         schedules = [{
             'dateExpression': expression, 'extractedScheduleDate': day + 'T10:00:00',
             'extractedScheduleContent': content,
-            'status': 'confirmed', 'evidence': expression,
+            'status': 'confirmed', 'eventId': content, 'evidence': expression,
         } for expression, day, content in [
             ('내일', '2026-09-26', '자료 제출'),
             ('2026년 9월 28일', '2026-09-28', '리뷰'),
@@ -197,8 +197,8 @@ class SummaryWorkflowTest(unittest.TestCase):
                     'input_text': original, 'meeting_date': '2026-09-25',
                 }, stream_mode='updates'):
                     updates.append(update)
-        self.assertIsNone(updates[2]['validate_dates']['result'])
-        self.assertEqual(updates[2]['validate_dates']['date_checks'], [
+        self.assertIsNone(updates[3]['validate_dates']['result'])
+        self.assertEqual(updates[3]['validate_dates']['date_checks'], [
             {'schedule_index': 0, 'status': 'matched', 'expected_date': '2026-09-26'},
             {'schedule_index': 1, 'status': 'matched', 'expected_date': '2026-09-28'},
             {'schedule_index': 2, 'status': 'unresolved'},
@@ -209,7 +209,7 @@ class SummaryWorkflowTest(unittest.TestCase):
         payload = {'summarizedText': '회의 요약', 'schedules': [{
             'dateExpression': '2026년 9월 28일 오전 10시',
             'extractedScheduleDate': '2026-09-29T10:00:00', 'extractedScheduleContent': '리뷰',
-            'status': 'confirmed', 'evidence': '2026년 9월 28일 오전 10시',
+            'status': 'confirmed', 'eventId': '리뷰', 'evidence': '2026년 9월 28일 오전 10시',
         }]}
         generate = Mock(return_value=json.dumps(payload))
         workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response, repair_invalid_response=False)
@@ -225,7 +225,7 @@ class SummaryWorkflowTest(unittest.TestCase):
         payload = {'summarizedText': '회의 요약', 'schedules': [{
             'dateExpression': '내일', 'extractedScheduleDate': '2026-09-26T10:00:00',
             'extractedScheduleContent': '제출',
-            'status': 'confirmed', 'evidence': '내일',
+            'status': 'confirmed', 'eventId': '제출', 'evidence': '내일',
         }]}
         generate = Mock(return_value=json.dumps(payload))
         workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response)
