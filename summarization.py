@@ -2,6 +2,8 @@ import json
 import logging
 from datetime import date, datetime
 
+from summary_schema import SummaryResponse
+
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +33,10 @@ class MeetingSummarizer:
             {"role": "user", "content": input_text}
         ]
         response_content = self.complete(messages).strip()
-        logger.info("GPT response: %s", response_content)
+        logger.info("모델 응답: %s", response_content)
 
         if response_content.startswith("```json") and response_content.endswith("```"):
             response_content = response_content[7:-3].strip()
 
         extracted_data = json.loads(response_content)
-        return {
-            'summarizedText': extracted_data.get('summarizedText', ''),
-            'schedules': extracted_data.get('schedules', [])
-        }
+        return SummaryResponse.model_validate(extracted_data, strict=True).model_dump()

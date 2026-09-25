@@ -2,6 +2,8 @@ import json
 import unittest
 from datetime import date, datetime
 
+from pydantic import ValidationError
+
 from summarization import MeetingSummarizer
 
 
@@ -70,6 +72,23 @@ class MeetingSummarizerTest(unittest.TestCase):
 
         with self.assertRaises(json.JSONDecodeError):
             summarizer.summarize("회의 내용")
+
+    def test_invalid_response_structure_is_rejected(self):
+        for payload in [
+            {"schedules": "일정 없음"},
+            {"schedules": None},
+            {"schedules": ["일정"]},
+            {"schedules": [{"extractedScheduleDate": "2026-09-28T15:00:00"}]},
+            {"schedules": [{"extractedScheduleContent": "디자인 리뷰"}]},
+            {"schedules": [{"extractedScheduleDate": 20260928, "extractedScheduleContent": "디자인 리뷰"}]},
+            {"schedules": [{"extractedScheduleDate": "2026-09-28T15:00:00", "extractedScheduleContent": None}]},
+            {"summarizedText": ["회의 요약"]},
+            [],
+        ]:
+            with self.subTest(payload=payload):
+                summarizer = MeetingSummarizer(lambda messages: json.dumps(payload))
+                with self.assertRaises(ValidationError):
+                    summarizer.summarize("회의 내용")
 
     def test_uses_current_date_for_each_request(self):
         dates = iter([datetime(2026, 9, 25, 23, 59), datetime(2026, 9, 26, 0, 1)])

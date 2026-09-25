@@ -8,7 +8,7 @@ def create_summary_blueprint(summarize):
 
     @blueprint.route('/summarize_text', methods=['POST'])
     def summarize_text():
-        current_app.logger.info("Received request for text summarization")
+        current_app.logger.info("회의 내용 요약 요청을 받았습니다.")
 
         data = request.json
         input_text = data.get('text', '')

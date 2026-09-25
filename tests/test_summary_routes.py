@@ -99,6 +99,17 @@ class SummaryRoutesTest(unittest.TestCase):
         self.assertEqual(response.get_json(), {"error": "회의 내용을 요약하지 못했습니다."})
         self.assertEqual(model.call_count, 1)
 
+    def test_invalid_model_structure_returns_korean_error_without_retry(self):
+        model = Mock(return_value='{"schedules": "일정 없음"}')
+        client = self.create_client(model)
+
+        with self.assertLogs(client.application.logger, level="ERROR"):
+            response = client.post("/summarize_text", json={"text": "회의 내용"})
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.get_json(), {"error": "회의 내용을 요약하지 못했습니다."})
+        model.assert_called_once()
+
     def test_model_failure_keeps_existing_error_response(self):
         def unavailable_model(messages):
             raise TimeoutError("internal provider details")
