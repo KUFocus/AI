@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class SummaryState(TypedDict, total=False):
     messages: list[dict[str, str]]
+    input_text: str
     response_content: str
     result: dict | None
     attempts: int
@@ -28,7 +29,7 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
 
     def validate(state: SummaryState):
         try:
-            result = validate_response(state['response_content'])
+            result = validate_response(state['response_content'], state['input_text'])
             return {'result': result, 'validation_error': None}
         except (json.JSONDecodeError, ValidationError) as error:
             if state['attempts'] >= max_attempts:

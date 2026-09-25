@@ -39,7 +39,7 @@ class MeetingSummarizer:
             },
             {"role": "user", "content": input_text}
         ]
-        state = self.workflow.invoke({'messages': messages})
+        state = self.workflow.invoke({'messages': messages, 'input_text': input_text})
         result = state['result']
         return {
             'summarizedText': result['summarizedText'],
@@ -55,10 +55,12 @@ class MeetingSummarizer:
         return response_content
 
     @staticmethod
-    def validate_response(response_content: str) -> dict:
+    def validate_response(response_content: str, input_text: str) -> dict:
         response_content = response_content.strip()
         if response_content.startswith("```json") and response_content.endswith("```"):
             response_content = response_content[7:-3].strip()
 
         extracted_data = json.loads(response_content)
-        return SummaryResponse.model_validate(extracted_data, strict=True).model_dump()
+        return SummaryResponse.model_validate(
+            extracted_data, strict=True, context={'input_text': input_text},
+        ).model_dump()

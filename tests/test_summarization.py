@@ -1,6 +1,7 @@
 import json
 import unittest
 from datetime import date, datetime
+from unittest.mock import Mock
 
 from pydantic import ValidationError
 
@@ -111,7 +112,7 @@ class MeetingSummarizerTest(unittest.TestCase):
             with self.subTest(location=location):
                 summarizer = MeetingSummarizer(lambda messages: json.dumps(payload))
                 with self.assertRaises(ValidationError) as caught:
-                    summarizer.summarize('회의 내용')
+                    summarizer.summarize('다음 주 월요일 회의 내용')
                 errors = caught.exception.errors()
                 self.assertEqual(len(errors), 1)
                 self.assertEqual(errors[0]['type'], 'extra_forbidden')
@@ -123,13 +124,13 @@ class MeetingSummarizerTest(unittest.TestCase):
                 schedule = {'extractedScheduleDate': '2026-09-28T15:00:00', 'extractedScheduleContent': value, 'dateExpression': '다음 주 월요일'}
                 summarizer = MeetingSummarizer(lambda messages: json.dumps({'summarizedText': '회의 요약', 'schedules': [schedule]}))
                 with self.assertRaisesRegex(ValidationError, '일정 내용은 비어 있거나 공백만으로 이루어질 수 없습니다.'):
-                    summarizer.summarize('회의 내용')
+                    summarizer.summarize('다음 주 월요일 회의 내용')
 
     def test_nonblank_schedule_content_is_preserved(self):
         schedule = {'extractedScheduleDate': '2026-09-28T15:00:00', 'extractedScheduleContent': '  디자인 리뷰\n자료 검토  '}
         summarizer = MeetingSummarizer(lambda messages: json.dumps({'summarizedText': '회의 요약', 'schedules': [{**schedule, 'dateExpression': '다음 주 월요일'}]}))
 
-        self.assertEqual(summarizer.summarize('회의 내용')['schedules'], [schedule])
+        self.assertEqual(summarizer.summarize('다음 주 월요일 회의 내용')['schedules'], [schedule])
 
     def test_invalid_schedule_date_is_rejected(self):
         for value in [
@@ -147,14 +148,14 @@ class MeetingSummarizerTest(unittest.TestCase):
                 }]})
                 summarizer = MeetingSummarizer(lambda messages: response)
                 with self.assertRaises(ValidationError):
-                    summarizer.summarize('회의 내용')
+                    summarizer.summarize('다음 주 월요일 회의 내용')
 
     def test_valid_schedule_date_preserves_original_precision(self):
         for value in ['2028-02-29T10:00:00', '2026-09-28T10:00', '2026-09-28T10:00:00.123456789']:
             with self.subTest(value=value):
                 schedule = {'extractedScheduleDate': value, 'extractedScheduleContent': '디자인 리뷰'}
-                summarizer = MeetingSummarizer(lambda messages: json.dumps({'summarizedText': '회의 요약', 'schedules': [{**schedule, 'dateExpression': '명시된 날짜'}]}))
-                result = summarizer.summarize('회의 내용')
+                summarizer = MeetingSummarizer(lambda messages: json.dumps({'summarizedText': '회의 요약', 'schedules': [{**schedule, 'dateExpression': value.split('T')[0]}]}))
+                result = summarizer.summarize(f'{value}에 디자인 리뷰를 한다.')
                 self.assertEqual(result['schedules'], [schedule])
 
     def test_date_expression_is_preserved_in_internal_validation_result(self):
@@ -164,7 +165,7 @@ class MeetingSummarizerTest(unittest.TestCase):
             'dateExpression': '다음 주 월요일',
         }
         payload = {'summarizedText': '회의 요약', 'schedules': [schedule]}
-        self.assertEqual(MeetingSummarizer.validate_response(json.dumps(payload)), payload)
+        self.assertEqual(MeetingSummarizer.validate_response(json.dumps(payload), '다음 주 월요일에 디자인 리뷰를 한다.'), payload)
 
     def test_missing_or_blank_date_expression_is_rejected(self):
         for expression in [{}, {'dateExpression': ''}, {'dateExpression': ' \t'}, {'dateExpression': None}]:
@@ -174,8 +175,42 @@ class MeetingSummarizerTest(unittest.TestCase):
                     'extractedScheduleContent': '디자인 리뷰', **expression,
                 }
                 with self.assertRaises(ValidationError) as caught:
-                    MeetingSummarizer.validate_response(json.dumps({'summarizedText': '회의 요약', 'schedules': [schedule]}))
+                    MeetingSummarizer.validate_response(json.dumps({'summarizedText': '회의 요약', 'schedules': [schedule]}), '회의 내용')
                 self.assertEqual([error['loc'] for error in caught.exception.errors()], [('schedules', 0, 'dateExpression')])
+
+    def test_date_expression_must_appear_verbatim_in_original_text(self):
+        for expression in ['다음 주 화요일', '2026-09-28', '다음주 월요일']:
+            with self.subTest(expression=expression):
+                payload = {'summarizedText': '회의 요약', 'schedules': [{
+                    'extractedScheduleDate': '2026-09-28T15:00:00',
+                    'extractedScheduleContent': '디자인 리뷰', 'dateExpression': expression,
+                }]}
+                with self.assertRaisesRegex(ValidationError, '날짜 표현이 회의 원문에 그대로 존재하지 않습니다') as caught:
+                    MeetingSummarizer.validate_response(json.dumps(payload), '다음 주 월요일 오후 3시에 디자인 리뷰를 한다.')
+                self.assertEqual([error['loc'] for error in caught.exception.errors()], [('schedules', 0, 'dateExpression')])
+
+    def test_original_text_error_can_be_repaired_once(self):
+        schedule = {'extractedScheduleDate': '2026-09-28T15:00:00', 'extractedScheduleContent': '디자인 리뷰'}
+        bad = {'summarizedText': '회의 요약', 'schedules': [{**schedule, 'dateExpression': '다음 주 화요일'}]}
+        good = {'summarizedText': '회의 요약', 'schedules': [{**schedule, 'dateExpression': '다음 주 월요일'}]}
+        model = Mock(side_effect=[json.dumps(bad), json.dumps(good)])
+        with self.assertLogs('summary_workflow', level='WARNING'):
+            result = MeetingSummarizer(model).summarize('다음 주 월요일 오후 3시에 디자인 리뷰를 한다.')
+
+        self.assertEqual(result, {'summarizedText': '회의 요약', 'schedules': [schedule]})
+        self.assertEqual(model.call_count, 2)
+        self.assertIn('날짜 표현이 회의 원문에 그대로 존재하지 않습니다', model.call_args.args[0][-1]['content'])
+
+    def test_prompt_example_and_previous_response_are_not_source_evidence(self):
+        payload = {'summarizedText': '회의 요약', 'schedules': [{
+            'extractedScheduleDate': '2026-09-28T15:00:00',
+            'extractedScheduleContent': '디자인 리뷰', 'dateExpression': '다음 주 월요일',
+        }]}
+        model = Mock(return_value=json.dumps(payload))
+        with self.assertLogs('summary_workflow', level='WARNING'):
+            with self.assertRaisesRegex(ValidationError, '날짜 표현이 회의 원문에 그대로 존재하지 않습니다'):
+                MeetingSummarizer(model).summarize('지난 성과만 공유했으며 일정을 정하지 않았다.')
+        self.assertEqual(model.call_count, 2)
 
     def test_uses_current_date_for_each_request(self):
         dates = iter([datetime(2026, 9, 25, 23, 59), datetime(2026, 9, 26, 0, 1)])

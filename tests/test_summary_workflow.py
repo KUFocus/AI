@@ -11,13 +11,13 @@ from summary_workflow import build_summary_workflow
 class SummaryWorkflowTest(unittest.TestCase):
     def test_reused_workflow_keeps_each_request_separate(self):
         generate = Mock(side_effect=['첫 번째 응답', '두 번째 응답'])
-        validate = Mock(side_effect=lambda content: {'summarizedText': content, 'schedules': []})
+        validate = Mock(side_effect=lambda content, input_text: {'summarizedText': content, 'schedules': []})
         workflow = build_summary_workflow(generate, validate)
         first_messages = [{'role': 'user', 'content': '첫 번째 회의'}]
         second_messages = [{'role': 'user', 'content': '두 번째 회의'}]
 
-        first = workflow.invoke({'messages': first_messages})
-        second = workflow.invoke({'messages': second_messages})
+        first = workflow.invoke({'messages': first_messages, 'input_text': '첫 번째 회의'})
+        second = workflow.invoke({'messages': second_messages, 'input_text': '두 번째 회의'})
 
         self.assertEqual(first['result']['summarizedText'], '첫 번째 응답')
         self.assertEqual(second['result']['summarizedText'], '두 번째 응답')
@@ -38,7 +38,7 @@ class SummaryWorkflowTest(unittest.TestCase):
                 workflow = build_summary_workflow(generate, validate)
 
                 with self.assertRaises(type(error)) as caught:
-                    workflow.invoke({'messages': [{'role': 'user', 'content': '회의 내용'}]})
+                    workflow.invoke({'messages': [{'role': 'user', 'content': '회의 내용'}], 'input_text': '회의 내용'})
 
                 self.assertIs(caught.exception, error)
                 generate.assert_called_once()
@@ -63,7 +63,7 @@ class SummaryWorkflowTest(unittest.TestCase):
                 generate = Mock(side_effect=[invalid, json.dumps(expected)])
                 workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response)
                 with self.assertLogs('summary_workflow', level='WARNING'):
-                    updates = list(workflow.stream({'messages': messages}, stream_mode='updates'))
+                    updates = list(workflow.stream({'messages': messages, 'input_text': messages[1]['content']}, stream_mode='updates'))
 
                 self.assertEqual([next(iter(update)) for update in updates], ['generate', 'validate', 'repair', 'generate', 'validate'])
                 self.assertEqual(updates[-1]['validate'], {'result': expected, 'validation_error': None})
@@ -84,14 +84,14 @@ class SummaryWorkflowTest(unittest.TestCase):
                 workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response)
                 with self.assertLogs('summary_workflow', level='WARNING'):
                     with self.assertRaises(error_type):
-                        workflow.invoke({'messages': [{'role': 'user', 'content': '회의 내용'}]})
+                        workflow.invoke({'messages': [{'role': 'user', 'content': '회의 내용'}], 'input_text': '회의 내용'})
                 self.assertEqual(generate.call_count, 2)
 
     def test_repair_can_be_disabled_for_single_call_evaluation(self):
         generate = Mock(return_value='{}')
         workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response, repair_invalid_response=False)
         with self.assertRaises(ValidationError):
-            workflow.invoke({'messages': [{'role': 'user', 'content': '회의 내용'}]})
+            workflow.invoke({'messages': [{'role': 'user', 'content': '회의 내용'}], 'input_text': '회의 내용'})
         generate.assert_called_once()
 
     def test_failed_request_does_not_leak_state_into_next_request(self):
@@ -100,8 +100,8 @@ class SummaryWorkflowTest(unittest.TestCase):
         workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response)
         with self.assertLogs('summary_workflow', level='WARNING'):
             with self.assertRaises(ValidationError):
-                workflow.invoke({'messages': [{'role': 'user', 'content': '첫 번째 회의'}]})
-            second = workflow.invoke({'messages': [{'role': 'user', 'content': '두 번째 회의'}]})
+                workflow.invoke({'messages': [{'role': 'user', 'content': '첫 번째 회의'}], 'input_text': '첫 번째 회의'})
+            second = workflow.invoke({'messages': [{'role': 'user', 'content': '두 번째 회의'}], 'input_text': '두 번째 회의'})
 
         self.assertEqual(second['result'], expected)
         self.assertEqual(second['attempts'], 2)
@@ -114,7 +114,7 @@ class SummaryWorkflowTest(unittest.TestCase):
         generate = Mock(return_value='{}')
         workflow = build_summary_workflow(generate, Mock(side_effect=error))
         with self.assertRaises(TypeError) as caught:
-            workflow.invoke({'messages': [{'role': 'user', 'content': '회의 내용'}]})
+            workflow.invoke({'messages': [{'role': 'user', 'content': '회의 내용'}], 'input_text': '회의 내용'})
         self.assertIs(caught.exception, error)
         generate.assert_called_once()
 
