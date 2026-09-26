@@ -17,7 +17,6 @@ class SummaryRoutesTest(unittest.TestCase):
         client = self.create_client(lambda messages: '''{
             "summarizedText": "회의 요약",
             "schedules": [{
-                "extractedScheduleDate": "2026-09-28T15:00:00",
                 "extractedScheduleContent": "디자인 리뷰",
                 "dateExpression": "다음 주 월요일", "status": "confirmed", "eventId": "event-1", "timeExpression": "오후 3시", "evidence": "다음 주 월요일 오후 3시"
             }]
@@ -41,7 +40,6 @@ class SummaryRoutesTest(unittest.TestCase):
         model = Mock(return_value='''{
             "summarizedText": "회의 요약",
             "schedules": [{
-                "extractedScheduleDate": "2026-10-02T03:00:00",
                 "extractedScheduleContent": "디자인 리뷰",
                 "dateExpression": "다음 주 월요일", "status": "confirmed",
                 "eventId": "review", "timeExpression": "오후 3시", "evidence": "다음 주 월요일 오후 3시에 디자인 리뷰를 한다."
@@ -173,7 +171,6 @@ class SummaryRoutesTest(unittest.TestCase):
         model = Mock(return_value='''{
             "summarizedText": "회의 요약",
             "schedules": [{
-                "extractedScheduleDate": "2026-09-28T10:00:00",
                 "extractedScheduleContent": "리뷰",
                 "dateExpression": "다음 주", "status": "confirmed", "eventId": "event-1", "timeExpression": null, "evidence": "다음 주"
             }]

@@ -13,7 +13,7 @@ SOURCE = '내일 오전 10시 리뷰를 확정합니다. 발표는 아직 검토
 
 def candidate(**changes):
     return {
-        'extractedScheduleContent': '리뷰', 'extractedScheduleDate': '2026-09-26T10:00:00',
+        'extractedScheduleContent': '리뷰',
         'dateExpression': '내일 오전 10시', 'status': 'confirmed',
         'eventId': changes.get('extractedScheduleContent', '리뷰'), 'timeExpression': '오전 10시' if changes.get('status', 'confirmed') == 'confirmed' else None, 'evidence': '내일 오전 10시 리뷰를 확정합니다.', **changes,
     }
@@ -27,9 +27,9 @@ class ScheduleCandidatesTest(unittest.TestCase):
     def test_only_confirmed_candidates_are_returned_in_existing_public_format(self):
         candidates = [
             candidate(),
-            candidate(extractedScheduleContent='발표', status='tentative', extractedScheduleDate=None,
+            candidate(extractedScheduleContent='발표', status='tentative',
                       dateExpression=None, evidence='발표는 아직 검토 중입니다.'),
-            candidate(extractedScheduleContent='점검', status='cancelled', extractedScheduleDate=None,
+            candidate(extractedScheduleContent='점검', status='cancelled',
                       dateExpression=None, evidence='점검은 취소합니다.'),
         ]
         internal = MeetingSummarizer.validate_response(response(candidates), SOURCE)
@@ -42,7 +42,7 @@ class ScheduleCandidatesTest(unittest.TestCase):
         model.assert_called_once()
 
     def test_only_tentative_or_cancelled_candidates_return_empty_without_date_tool(self):
-        candidates = [candidate(status=status, extractedScheduleDate=None, dateExpression=None, evidence=quote)
+        candidates = [candidate(status=status, dateExpression=None, evidence=quote)
                       for status, quote in [('tentative', '발표는 아직 검토 중입니다.'), ('cancelled', '점검은 취소합니다.')]]
         model = Mock(return_value=response(candidates))
         with patch('summary_workflow.resolve_schedule_date') as tool:
@@ -62,7 +62,7 @@ class ScheduleCandidatesTest(unittest.TestCase):
                 self.assertEqual(caught.exception.errors()[0]['type'], 'missing')
 
     def test_confirmed_candidate_accepts_missing_fields_for_rule_based_completion(self):
-        for fields in [{'extractedScheduleDate': None}, {'dateExpression': None}]:
+        for fields in [{'dateExpression': None}, {'timeExpression': None}]:
             with self.subTest(fields=fields):
                 value = candidate(**fields)
                 result = MeetingSummarizer.validate_response(response([value]), SOURCE)
@@ -71,13 +71,13 @@ class ScheduleCandidatesTest(unittest.TestCase):
     def test_unconfirmed_candidates_cannot_supply_invented_dates(self):
         for status in ['tentative', 'cancelled']:
             with self.subTest(status=status):
-                with self.assertRaisesRegex(ValidationError, '미확정 또는 취소 일정의 날짜와 날짜 표현은 null'):
+                with self.assertRaisesRegex(ValidationError, '미확정 또는 취소 일정의 날짜 표현은 null'):
                     MeetingSummarizer.validate_response(response([candidate(status=status)]), SOURCE)
 
     def test_blank_or_fabricated_evidence_is_rejected_even_for_excluded_candidates(self):
         for quote in ['', '   ', '참석자 모두 동의하여 발표를 확정합니다.']:
             with self.subTest(quote=quote):
-                value = candidate(status='tentative', extractedScheduleDate=None, dateExpression=None, evidence=quote)
+                value = candidate(status='tentative', dateExpression=None, evidence=quote)
                 with self.assertRaises(ValidationError) as caught:
                     MeetingSummarizer.validate_response(response([value]), SOURCE)
                 self.assertEqual(caught.exception.errors()[0]['loc'], ('schedules', 0, 'evidence'))
@@ -116,8 +116,7 @@ class ScheduleCandidatesTest(unittest.TestCase):
         quote = '리뷰는 모레 오전 10시로 변경해서 확정합니다.'
         source = f'리뷰는 내일 오전 10시로 제안합니다. {quote}'
         bad = candidate(evidence=quote)
-        good = candidate(evidence=quote, dateExpression='모레 오전 10시',
-                         extractedScheduleDate='2026-09-27T10:00:00')
+        good = candidate(evidence=quote, dateExpression='모레 오전 10시')
         model = Mock(side_effect=[response([bad]), response([good])])
 
         with patch('summary_workflow.resolve_schedule_date') as tool:

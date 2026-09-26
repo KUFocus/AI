@@ -20,7 +20,7 @@ class MeetingSummarizerTest(unittest.TestCase):
         requests = []
         model_response = {
             'summarizedText': expected['summarizedText'],
-            'schedules': [{**expected['schedules'][0], 'dateExpression': '다음 주 월요일', 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': '오후 3시', 'evidence': '다음 주 월요일 오후 3시'}],
+            'schedules': [{'extractedScheduleContent': expected['schedules'][0]['extractedScheduleContent'], 'dateExpression': '다음 주 월요일', 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': '오후 3시', 'evidence': '다음 주 월요일 오후 3시'}],
         }
 
         def complete(messages):
@@ -86,10 +86,8 @@ class MeetingSummarizerTest(unittest.TestCase):
             {"schedules": "일정 없음"},
             {"schedules": None},
             {"schedules": ["일정"]},
-            {"schedules": [{"extractedScheduleDate": "2026-09-28T15:00:00", "dateExpression": "다음 주 월요일", 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': None, 'evidence': "다음 주 월요일"}]},
-            {"schedules": [{"extractedScheduleContent": "디자인 리뷰", "dateExpression": "다음 주 월요일", 'status': 'confirmed', 'eventId': "디자인 리뷰", 'timeExpression': None, 'evidence': "다음 주 월요일"}]},
-            {"schedules": [{"extractedScheduleDate": 20260928, "extractedScheduleContent": "디자인 리뷰", "dateExpression": "다음 주 월요일", 'status': 'confirmed', 'eventId': "디자인 리뷰", 'timeExpression': None, 'evidence': "다음 주 월요일"}]},
-            {"schedules": [{"extractedScheduleDate": "2026-09-28T15:00:00", "extractedScheduleContent": None, "dateExpression": "다음 주 월요일", 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': None, 'evidence': "다음 주 월요일"}]},
+            {"schedules": [{"dateExpression": "다음 주 월요일", 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': None, 'evidence': "다음 주 월요일"}]},
+            {"schedules": [{"extractedScheduleContent": None, "dateExpression": "다음 주 월요일", 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': None, 'evidence': "다음 주 월요일"}]},
             {"summarizedText": ["회의 요약"]},
             [],
         ]:
@@ -104,7 +102,6 @@ class MeetingSummarizerTest(unittest.TestCase):
         for payload, location in [
             ({'summarizedText': '회의 요약', 'schedules': [], 'extra': '부가 정보'}, ('extra',)),
             ({'summarizedText': '회의 요약', 'schedules': [{
-                'extractedScheduleDate': '2026-09-28T15:00:00',
                 'extractedScheduleContent': '디자인 리뷰', 'extra': '부가 정보',
                 'dateExpression': '다음 주 월요일',
                 'status': 'confirmed', 'eventId': '디자인 리뷰', 'timeExpression': None, 'evidence': '다음 주 월요일',
@@ -122,47 +119,33 @@ class MeetingSummarizerTest(unittest.TestCase):
     def test_blank_schedule_content_is_rejected(self):
         for value in ['', '   ', '\t\n', '\u3000']:
             with self.subTest(value=value):
-                schedule = {'extractedScheduleDate': '2026-09-28T15:00:00', 'extractedScheduleContent': value, 'dateExpression': '다음 주 월요일', 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': None, 'evidence': '다음 주 월요일'}
+                schedule = {'extractedScheduleContent': value, 'dateExpression': '다음 주 월요일', 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': None, 'evidence': '다음 주 월요일'}
                 summarizer = MeetingSummarizer(lambda messages: json.dumps({'summarizedText': '회의 요약', 'schedules': [schedule]}))
                 with self.assertRaisesRegex(ValidationError, '일정 내용은 비어 있거나 공백만으로 이루어질 수 없습니다.'):
                     summarizer.summarize('다음 주 월요일 회의 내용')
 
     def test_nonblank_schedule_content_is_preserved(self):
         schedule = {'extractedScheduleDate': '2026-09-28T15:00:00', 'extractedScheduleContent': '  디자인 리뷰\n자료 검토  '}
-        summarizer = MeetingSummarizer(lambda messages: json.dumps({'summarizedText': '회의 요약', 'schedules': [{**schedule, 'dateExpression': '다음 주 월요일', 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': '오후 3시', 'evidence': '다음 주 월요일 오후 3시'}]}))
+        summarizer = MeetingSummarizer(lambda messages: json.dumps({'summarizedText': '회의 요약', 'schedules': [{'extractedScheduleContent': schedule['extractedScheduleContent'], 'dateExpression': '다음 주 월요일', 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': '오후 3시', 'evidence': '다음 주 월요일 오후 3시'}]}))
 
         self.assertEqual(summarizer.summarize('다음 주 월요일 오후 3시 회의 내용', meeting_date=date(2026, 9, 25))['schedules'], [schedule])
 
-    def test_invalid_schedule_date_is_rejected(self):
-        for value in [
-            '2026-02-30T10:00:00', '2026-02-29T10:00:00',
-            '2026-09-28T24:00:00', '2026-09-28T10:60:00',
-            '2026-09-28T10:00:60',
-            '2026-09-28 10:00:00', '2026-09-28T10:00:00+09:00',
-            '2026-09-28T10:00:00Z', '다음 주 월요일', '',
-        ]:
+    def test_model_cannot_return_computed_dates_even_when_the_value_is_valid(self):
+        for value in ['2027-01-06T00:00:00Z', '2028-01-07T18:00:00', None]:
             with self.subTest(value=value):
-                response = json.dumps({'summarizedText': '회의 요약', 'schedules': [{
-                    'extractedScheduleDate': value,
-                    'extractedScheduleContent': '디자인 리뷰',
-                    'dateExpression': '다음 주 월요일',
-                    'status': 'confirmed', 'eventId': '디자인 리뷰', 'timeExpression': None, 'evidence': '다음 주 월요일',
-                }]})
-                summarizer = MeetingSummarizer(lambda messages: response)
-                with self.assertRaises(ValidationError):
-                    summarizer.summarize('다음 주 월요일 회의 내용')
-
-    def test_valid_schedule_date_preserves_precision_during_schema_validation(self):
-        for value in ['2028-02-29T10:00:00', '2026-09-28T10:00', '2026-09-28T10:00:00.123456789']:
-            with self.subTest(value=value):
-                schedule = {'extractedScheduleDate': value, 'extractedScheduleContent': '디자인 리뷰'}
-                summarizer = MeetingSummarizer(lambda messages: json.dumps({'summarizedText': '회의 요약', 'schedules': [{**schedule, 'dateExpression': value.split('T')[0], 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': None, 'evidence': value.split('T')[0]}]}))
-                result = summarizer.validate_response(summarizer.complete([]), f'{value}에 디자인 리뷰를 한다.')
-                self.assertEqual(result['schedules'][0]['extractedScheduleDate'], value)
+                payload = {'summarizedText': '회의 요약', 'schedules': [{
+                    'extractedScheduleDate': value, 'extractedScheduleContent': '교육 자료 전달',
+                    'dateExpression': '다음 주 금요일', 'timeExpression': None,
+                    'status': 'confirmed', 'eventId': 'delivery', 'evidence': '다음 주 금요일에 교육 자료 전달',
+                }]}
+                with self.assertRaises(ValidationError) as caught:
+                    MeetingSummarizer.validate_response(json.dumps(payload), '다음 주 금요일에 교육 자료 전달')
+                error = caught.exception.errors()[0]
+                self.assertEqual(error['loc'], ('schedules', 0, 'extractedScheduleDate'))
+                self.assertEqual(error['type'], 'extra_forbidden')
 
     def test_date_expression_is_preserved_in_internal_validation_result(self):
         schedule = {
-            'extractedScheduleDate': '2026-09-28T15:00:00',
             'extractedScheduleContent': '디자인 리뷰',
             'dateExpression': '다음 주 월요일',
             'status': 'confirmed', 'eventId': '디자인 리뷰', 'timeExpression': None, 'evidence': '다음 주 월요일',
@@ -174,7 +157,6 @@ class MeetingSummarizerTest(unittest.TestCase):
         for expression in [{}, {'dateExpression': ''}, {'dateExpression': ' \t'}]:
             with self.subTest(expression=expression):
                 schedule = {
-                    'extractedScheduleDate': '2026-09-28T15:00:00',
                     'extractedScheduleContent': '디자인 리뷰', **expression,
                     'status': 'confirmed', 'eventId': '디자인 리뷰', 'timeExpression': None, 'evidence': '회의 내용',
                 }
@@ -186,7 +168,6 @@ class MeetingSummarizerTest(unittest.TestCase):
         for expression in ['다음 주 화요일', '2026-09-28', '다음주 월요일']:
             with self.subTest(expression=expression):
                 payload = {'summarizedText': '회의 요약', 'schedules': [{
-                    'extractedScheduleDate': '2026-09-28T15:00:00',
                     'extractedScheduleContent': '디자인 리뷰', 'dateExpression': expression,
                     'status': 'confirmed', 'eventId': '디자인 리뷰', 'timeExpression': None, 'evidence': '다음 주 월요일',
                 }]}
@@ -196,8 +177,8 @@ class MeetingSummarizerTest(unittest.TestCase):
 
     def test_original_text_error_can_be_repaired_once(self):
         schedule = {'extractedScheduleDate': '2026-09-28T15:00:00', 'extractedScheduleContent': '디자인 리뷰'}
-        bad = {'summarizedText': '회의 요약', 'schedules': [{**schedule, 'dateExpression': '다음 주 화요일', 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': '오후 3시', 'evidence': '다음 주 화요일'}]}
-        good = {'summarizedText': '회의 요약', 'schedules': [{**schedule, 'dateExpression': '다음 주 월요일', 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': '오후 3시', 'evidence': '다음 주 월요일 오후 3시'}]}
+        bad = {'summarizedText': '회의 요약', 'schedules': [{'extractedScheduleContent': schedule['extractedScheduleContent'], 'dateExpression': '다음 주 화요일', 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': '오후 3시', 'evidence': '다음 주 화요일'}]}
+        good = {'summarizedText': '회의 요약', 'schedules': [{'extractedScheduleContent': schedule['extractedScheduleContent'], 'dateExpression': '다음 주 월요일', 'status': 'confirmed', 'eventId': 'event-1', 'timeExpression': '오후 3시', 'evidence': '다음 주 월요일 오후 3시'}]}
         model = Mock(side_effect=[json.dumps(bad), json.dumps(good)])
         with self.assertLogs('summary_workflow', level='WARNING'):
             result = MeetingSummarizer(model).summarize(
@@ -210,7 +191,6 @@ class MeetingSummarizerTest(unittest.TestCase):
 
     def test_prompt_example_and_previous_response_are_not_source_evidence(self):
         payload = {'summarizedText': '회의 요약', 'schedules': [{
-            'extractedScheduleDate': '2026-09-28T15:00:00',
             'extractedScheduleContent': '디자인 리뷰', 'dateExpression': '다음 주 월요일',
             'status': 'confirmed', 'eventId': '디자인 리뷰', 'timeExpression': None, 'evidence': '다음 주 월요일',
         }]}
@@ -236,14 +216,14 @@ class MeetingSummarizerTest(unittest.TestCase):
         self.assertIn("오늘의 날짜(2026-09-26)", prompts[1])
 
     def test_date_tool_uses_each_requests_reference_including_current_date_fallback(self):
-        def response(day):
+        def response():
             return json.dumps({'summarizedText': '회의 요약', 'schedules': [{
-                'dateExpression': '내일', 'extractedScheduleDate': day + 'T10:00:00',
+                'dateExpression': '내일',
                 'extractedScheduleContent': '제출',
                 'status': 'confirmed', 'eventId': '제출', 'timeExpression': '오전 10시', 'evidence': '내일 오전 10시',
             }]})
 
-        model = Mock(side_effect=[response('2026-09-26'), response('2026-09-28')])
+        model = Mock(side_effect=[response(), response()])
         summarizer = MeetingSummarizer(model, now=lambda: datetime(2026, 9, 27))
         first = summarizer.summarize('내일 오전 10시에 제출한다.', meeting_date=date(2026, 9, 25))
         second = summarizer.summarize('내일 오전 10시에 제출한다.')

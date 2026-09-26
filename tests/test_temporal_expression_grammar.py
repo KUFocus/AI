@@ -70,7 +70,7 @@ class TemporalExpressionGrammarTest(unittest.TestCase):
     def test_workflow_keeps_quoted_evidence_and_normalizes_without_model_retry(self):
         source = '납품 검수는 모레 오후 4시 17분부터 진행하기로 확정했습니다.'
         schedule = {
-            'eventId': 'inspection', 'extractedScheduleDate': None,
+            'eventId': 'inspection',
             'extractedScheduleContent': '납품 검수', 'status': 'confirmed',
             'dateExpression': '모레', 'timeExpression': '오후 4시 17분부터', 'evidence': source,
         }

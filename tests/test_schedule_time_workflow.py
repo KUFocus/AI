@@ -15,7 +15,7 @@ def schedule(**changes):
     return {
         'eventId': 'review', 'status': 'confirmed', 'evidence': SOURCE,
         'dateExpression': '내일', 'timeExpression': '오후 3시 반',
-        'extractedScheduleDate': '2026-09-27T03:00:42.123', 'extractedScheduleContent': '리뷰',
+        'extractedScheduleContent': '리뷰',
         **changes,
     }
 
@@ -85,7 +85,7 @@ class ScheduleTimeWorkflowTest(unittest.TestCase):
         source = SOURCE + ' ' + second_source
         second = schedule(eventId='presentation', evidence=second_source, dateExpression='모레', timeExpression='4시쯤')
         cancelled = schedule(eventId='cancelled', status='cancelled', evidence='점검 취소',
-                             dateExpression=None, timeExpression=None, extractedScheduleDate=None)
+                             dateExpression=None, timeExpression=None)
         source += ' 점검 취소'
         model = Mock(return_value=response(cancelled, schedule(), second))
         workflow = MeetingSummarizer(model).workflow
@@ -100,13 +100,13 @@ class ScheduleTimeWorkflowTest(unittest.TestCase):
         failure = next(update['normalize_times'] for update in updates if 'normalize_times' in update)
         self.assertIsNone(failure['result'])
         self.assertEqual(failure['time_checks'], [
-            {'schedule_index': 1, 'status': 'normalized', 'expected_time': '15:30:00', 'original_time': '03:00:42.123'},
+            {'schedule_index': 1, 'status': 'resolved', 'expected_time': '15:30:00'},
             {'schedule_index': 2, 'status': 'unresolved'},
         ])
         self.assertEqual(model.call_count, 2)
 
     def test_cancelled_schedule_does_not_invoke_time_tool(self):
-        model = Mock(return_value=response(schedule(status='cancelled', extractedScheduleDate=None,
+        model = Mock(return_value=response(schedule(status='cancelled',
                                                     dateExpression=None, timeExpression=None, evidence='리뷰 취소')))
         with patch('summary_workflow.resolve_schedule_time') as tool:
             result = MeetingSummarizer(model).summarize('리뷰 취소')
@@ -116,7 +116,7 @@ class ScheduleTimeWorkflowTest(unittest.TestCase):
     def test_unconfirmed_schedule_cannot_keep_time_expression(self):
         for status in ['tentative', 'cancelled']:
             with self.subTest(status=status):
-                value = schedule(status=status, extractedScheduleDate=None, dateExpression=None)
+                value = schedule(status=status, dateExpression=None)
                 with self.assertRaisesRegex(ValidationError, '미확정 또는 취소 일정의 시각 표현은 null'):
                     MeetingSummarizer.validate_response(response(value), SOURCE)
 

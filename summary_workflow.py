@@ -107,24 +107,12 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
                 )
                 continue
 
-            actual_date, _, clock = (schedule['extractedScheduleDate'] or '').partition('T')
-            matches = actual_date == expected_date
-            check = {
-                'schedule_index': index, 'status': 'matched' if matches else 'normalized',
-                'expected_date': expected_date,
-            }
-            if not matches:
-                check['original_date'] = actual_date
-                logger.info(
-                    '일정 %s의 날짜를 원문과 회의 기준일에 따라 보정했습니다. %s -> %s',
-                    index, actual_date, expected_date,
-                )
+            check = {'schedule_index': index, 'status': 'resolved', 'expected_date': expected_date}
             if schedule['dateExpression'] is None:
                 check.update(status='defaulted', policy='reference_date')
                 logger.info('일정 %s는 날짜 표현이 없어 기준일 %s를 적용했습니다.', index, expected_date)
             checks.append(check)
-            normalized_date = f'{expected_date}T{clock}' if clock else expected_date
-            schedules.append({**schedule, 'extractedScheduleDate': normalized_date})
+            schedules.append({**schedule, 'resolvedDate': expected_date})
         if errors:
             feedback = '\n'.join(errors)
             if state['attempts'] >= max_attempts:
@@ -149,12 +137,8 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
                 checks.append({'schedule_index': index, 'status': 'unresolved'})
                 errors.append(f'schedules.{index}.timeExpression: {error} 원문의 시각 근거와 조건을 유지해 주세요.')
                 continue
-            day, _, original_clock = schedule['extractedScheduleDate'].partition('T')
-            matches = original_clock == clock
-            check = {'schedule_index': index, 'status': 'matched' if matches else 'normalized', 'expected_time': clock}
-            if not matches:
-                check['original_time'] = original_clock
-                logger.info('일정 %s의 시각을 계산 결과로 보정했습니다. %s -> %s', index, original_clock, clock)
+            day = schedule['resolvedDate']
+            check = {'schedule_index': index, 'status': 'resolved', 'expected_time': clock}
             if expression is None:
                 check.update(status='defaulted', policy='missing_time_18')
                 logger.info('일정 %s는 시각 표현이 없어 기본 시각 18:00을 적용했습니다.', index)
@@ -187,7 +171,7 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
             {'role': 'user', 'content': (
                 f"검증 오류: {state['validation_error']}\n"
                 '원래 회의 내용과 기준일을 유지하고 오류를 수정한 전체 JSON 응답을 작성해 주세요. '
-                '필수 항목과 자료형, 실제 날짜와 시간, 비어 있지 않은 일정 내용을 확인해 주세요. '
+                '필수 항목과 자료형, 원문의 날짜와 시각 표현, 비어 있지 않은 일정 내용을 확인해 주세요. 계산한 날짜와 시각은 반환하지 마세요. '
                 '검증을 통과하려고 원문에 없는 일정을 만들거나 일정을 임의로 삭제하지 마세요.'
             )},
         ]}

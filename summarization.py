@@ -34,8 +34,7 @@ class MeetingSummarizer:
                     f"다음 회의록 내용을 바탕으로 JSON 객체를 만들기 위해 두 가지 작업을 수행해줘. "
                     f"첫째, 회의 내용에서 핵심을 요약하여 'summarizedText'로 반환해줘. 요약에 아래 일정 내용에 적을 일정과 관련된 내용은 절대 포함시키지 마. "
                     f"둘째, 일정별 제안, 확정, 변경, 취소의 결정 이력을 'schedules' 리스트로 반환해줘. 최종 결정만 남기지 말고 상태가 바뀌는 각 발언을 별도 객체로 기록해줘. "
-                    f"각 일정은 'extractedScheduleDate' (계산한 날짜와 시각 또는 null, 날짜나 시각이 빠졌으면 null 가능), "
-                    f"'extractedScheduleContent', 'dateExpression', 'timeExpression', 'status', 'evidence', 'eventId'로 JSON 객체를 만들어 줘. "
+                    f"각 일정은 'extractedScheduleContent', 'dateExpression', 'timeExpression', 'status', 'evidence', 'eventId'로 JSON 객체를 만들어 줘. "
                     f"eventId는 이 요청 안에서만 쓰는 식별자야. 같은 일정의 변경 이력에는 같은 값을, 서로 다른 일정이나 별개 회차에는 다른 값을 사용해줘. "
                     f"status는 확정이면 confirmed, 제안 또는 확인 대기이면 tentative, 취소이면 cancelled로 적어줘. "
                     f"날짜가 언급됐다는 이유만으로 확정하지 마. 변경 전 확정과 변경 후 확정을 각각 기록하고 각 발언 시점의 날짜를 사용해줘. "
@@ -43,7 +42,7 @@ class MeetingSummarizer:
                     f"확정 일정의 evidence에는 null이 아닌 dateExpression과 timeExpression도 포함해야 해. 날짜, 시각과 확정 발언이 서로 다른 문장이면 필요한 연속된 원문 구간을 함께 복사해줘. "
                     f"앞선 제안과 수락 발언을 함께 인용해야 날짜를 알 수 있으면 하나의 확정 결정으로 묶고, 그 제안을 별도 객체로 중복 기록하지 마. "
                     f"변경 전 날짜나 다른 일정의 날짜를 새 확정 발언과 연결하지 마. 변경 제안은 tentative로 기록하고 명시적인 취소가 없으면 취소 이력을 만들지 마. "
-                    f"tentative 또는 cancelled이면 extractedScheduleDate, dateExpression, timeExpression은 null로 적고 날짜와 시각을 추측하지 마. "
+                    f"tentative 또는 cancelled이면 dateExpression, timeExpression은 null로 적고 날짜와 시각을 추측하지 마. "
                     f"timeExpression은 '오후 3시 반', '15:30'처럼 원문의 시각 표현을 그대로 복사해줘. '3시쯤'의 '쯤'이나 '3시 또는 4시'의 조건을 지우지 마. 원문에 시각이 없으면 null로 적어줘. "
                     f"날짜나 시각이 없으면 각각 dateExpression, timeExpression을 null로 두고 기본값을 원문 표현인 것처럼 적지 마. 둘 다 없으면 날짜와 시각을 만들지 마. "
                     f"날짜가 모호하면 그 표현을 유지해줘. '조만간'을 날짜가 없는 것으로 바꾸거나 '3시쯤'을 시각이 없는 것으로 바꾸지 마. "
@@ -51,7 +50,7 @@ class MeetingSummarizer:
                     f"dateExpression에는 날짜 표현을, timeExpression에는 시각 표현을 조사와 조건을 포함해 원문에서 그대로 복사해줘. 표현의 정규화와 기본값 적용은 서버가 담당해. 날짜와 시각이 함께 있으면 각각 분리하되 원문에 없는 단어를 추가하지 마. "
                     f"예를 들어 '다음 주 월요일 오전 10시'에서는 '다음 주 월요일'을 복사하고 계산한 날짜로 바꾸지 마. "
                     f"일정 내용은 '제출', '완성'과 같이 일정표에 적는 것처럼 만들어줘 일정 내용에는 날짜 정보를 절대 포함하시키지 마. "
-                    f"일정이 '오늘', '내일', '다음 주', '다음주 목요일'과 같은 상대적인 표현일 경우, 오늘의 날짜({reference_date_text})를 기준으로 해당 날짜를 환산하되 원문에 없는 시각을 만들지 마. "
+                    f"일정이 '오늘', '내일', '다음 주', '다음주 목요일'과 같은 상대적인 표현일 경우, 오늘의 날짜({reference_date_text})를 기준으로 원문 표현을 그대로 유지해줘. 날짜 계산과 최종 날짜 및 시각 생성은 서버가 담당하므로 계산한 날짜와 시각은 반환하지 마. "
                     f"만약 일정 후보가 전혀 없다면 빈 리스트로 반환해."
                 )
             },

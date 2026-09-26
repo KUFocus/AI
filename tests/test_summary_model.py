@@ -60,10 +60,10 @@ class OpenAISummaryModelTest(unittest.TestCase):
         schedule = schema["$defs"]["ScheduleDecision"]
         self.assertEqual(schedule["type"], "object")
         self.assertIs(schedule["additionalProperties"], False)
-        self.assertEqual(set(schedule["required"]), {"extractedScheduleDate", "extractedScheduleContent", "dateExpression", "status", "evidence", "eventId", "timeExpression"})
-        self.assertEqual(set(schedule["properties"]), {"extractedScheduleDate", "extractedScheduleContent", "dateExpression", "status", "evidence", "eventId", "timeExpression"})
+        self.assertEqual(set(schedule["required"]), {"extractedScheduleContent", "dateExpression", "status", "evidence", "eventId", "timeExpression"})
+        self.assertEqual(set(schedule["properties"]), {"extractedScheduleContent", "dateExpression", "status", "evidence", "eventId", "timeExpression"})
         self.assertEqual(schedule["properties"]["status"]["enum"], ["confirmed", "tentative", "cancelled"])
-        for name in ["extractedScheduleDate", "dateExpression", "timeExpression"]:
+        for name in ["dateExpression", "timeExpression"]:
             self.assertEqual(schedule["properties"][name]["anyOf"], [{"type": "string"}, {"type": "null"}])
 
     def test_incomplete_refused_or_empty_response_is_rejected_without_retry(self):

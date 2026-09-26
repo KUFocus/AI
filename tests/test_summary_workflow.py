@@ -44,22 +44,22 @@ class SummaryWorkflowTest(unittest.TestCase):
                 generate.assert_called_once()
                 validate.assert_not_called()
 
-    def test_repairs_json_or_date_error_with_feedback_and_original_context(self):
+    def test_repairs_json_or_expression_error_with_feedback_and_original_context(self):
         expected = {'summarizedText': '회의 요약', 'schedules': [{
-            'extractedScheduleDate': '2026-09-28T10:00:00', 'extractedScheduleContent': '디자인 리뷰',
+            'extractedScheduleContent': '디자인 리뷰',
             'dateExpression': '다음 주 월요일',
             'status': 'confirmed', 'eventId': '디자인 리뷰', 'timeExpression': '오전 10시', 'evidence': '다음 주 월요일 오전 10시',
         }]}
-        invalid_date = {'summarizedText': '회의 요약', 'schedules': [{
-            'extractedScheduleDate': '2026-02-30T10:00:00', 'extractedScheduleContent': '디자인 리뷰',
-            'dateExpression': '다음 주 월요일',
+        invalid_expression = {'summarizedText': '회의 요약', 'schedules': [{
+            'extractedScheduleContent': '디자인 리뷰',
+            'dateExpression': '없는 날짜 표현',
             'status': 'confirmed', 'eventId': '디자인 리뷰', 'timeExpression': '오전 10시', 'evidence': '다음 주 월요일 오전 10시',
         }]}
         messages = [{'role': 'system', 'content': '기준일: 2026-09-25'},
                     {'role': 'user', 'content': '다음 주 월요일 오전 10시에 디자인 리뷰를 한다.'}]
         for invalid, feedback in [
             ('잘못된 JSON', '올바른 JSON 형식'),
-            (json.dumps(invalid_date), 'schedules.0.extractedScheduleDate: 일정 날짜 또는 시간이 유효하지 않습니다.'),
+            (json.dumps(invalid_expression), 'schedules.0.dateExpression: 날짜 표현이 회의 원문에 그대로 존재하지 않습니다.'),
         ]:
             with self.subTest(invalid=invalid):
                 generate = Mock(side_effect=[invalid, json.dumps(expected)])
@@ -122,38 +122,39 @@ class SummaryWorkflowTest(unittest.TestCase):
         self.assertIs(caught.exception, error)
         generate.assert_called_once()
 
-    def test_date_with_time_suffix_is_normalized_without_model_retry(self):
+    def test_final_datetime_is_created_only_after_date_and_time_resolution(self):
         response = json.dumps({'summarizedText': '회의 요약', 'schedules': [{
-            'dateExpression': '다음 주 월요일 오후 3시', 'extractedScheduleDate': '2026-10-02T15:00:00.123456789',
+            'dateExpression': '다음 주 월요일 오후 3시',
             'extractedScheduleContent': '디자인 리뷰',
             'status': 'confirmed', 'eventId': '리뷰', 'timeExpression': '오후 3시', 'evidence': '다음 주 월요일 오후 3시',
         }]})
         generate = Mock(return_value=response)
         workflow = build_summary_workflow(generate, MeetingSummarizer.validate_response)
         original = '다음 주 월요일 오후 3시에 디자인 리뷰를 한다.'
-        with self.assertLogs('summary_workflow', level='INFO') as logs:
-            updates = list(workflow.stream({
-                'messages': [{'role': 'user', 'content': original}],
-                'input_text': original, 'meeting_date': '2026-09-25',
-            }, stream_mode='updates'))
+        updates = list(workflow.stream({
+            'messages': [{'role': 'user', 'content': original}],
+            'input_text': original, 'meeting_date': '2026-09-25',
+        }, stream_mode='updates'))
 
         self.assertEqual([next(iter(update)) for update in updates], [
             'generate', 'validate', 'resolve_histories', 'normalize_dates', 'normalize_times',
         ])
         self.assertEqual(updates[-2]['normalize_dates']['date_checks'], [{
-            'schedule_index': 0, 'status': 'normalized', 'expected_date': '2026-09-28',
-            'original_date': '2026-10-02',
+            'schedule_index': 0, 'status': 'resolved', 'expected_date': '2026-09-28',
         }])
-        self.assertEqual(updates[-2]['normalize_dates']['result']['schedules'][0]['extractedScheduleDate'],
-                         '2026-09-28T15:00:00.123456789')
-        self.assertEqual(updates[-3]['resolve_histories']['result']['schedules'][0]['extractedScheduleDate'],
-                         '2026-10-02T15:00:00.123456789')
-        self.assertIn('날짜를 원문과 회의 기준일에 따라 보정했습니다', logs.output[0])
+        selected = updates[-3]['resolve_histories']['result']['schedules'][0]
+        dated = updates[-2]['normalize_dates']['result']['schedules'][0]
+        resolved = updates[-1]['normalize_times']['result']['schedules'][0]
+        self.assertNotIn('extractedScheduleDate', selected)
+        self.assertNotIn('resolvedDate', selected)
+        self.assertEqual(dated['resolvedDate'], '2026-09-28')
+        self.assertNotIn('extractedScheduleDate', dated)
+        self.assertEqual(resolved['extractedScheduleDate'], '2026-09-28T15:00:00')
         generate.assert_called_once()
 
     def test_date_normalization_does_not_require_remaining_repair_budget(self):
         response = json.dumps({'summarizedText': '회의 요약', 'schedules': [{
-            'dateExpression': '내일', 'extractedScheduleDate': '2026-09-27T10:00:00',
+            'dateExpression': '내일',
             'extractedScheduleContent': '자료 제출',
             'status': 'confirmed', 'eventId': '자료 제출', 'timeExpression': '오전 10시', 'evidence': '내일 오전 10시',
         }]})
@@ -174,13 +175,13 @@ class SummaryWorkflowTest(unittest.TestCase):
 
     def test_unresolved_date_blocks_partial_success_and_uses_one_repair(self):
         schedules = [{
-            'dateExpression': expression, 'extractedScheduleDate': day + 'T10:00:00',
+            'dateExpression': expression,
             'extractedScheduleContent': content,
             'status': 'confirmed', 'eventId': content, 'timeExpression': '오전 10시', 'evidence': f'{expression} 오전 10시',
-        } for expression, day, content in [
-            ('내일', '2026-09-27', '자료 제출'),
-            ('2026년 9월 28일', '2026-09-28', '리뷰'),
-            ('이번 주 일요일', '2026-09-27', '점검'),
+        } for expression, content in [
+            ('내일', '자료 제출'),
+            ('2026년 9월 28일', '리뷰'),
+            ('이번 주 일요일', '점검'),
         ]]
         payload = {'summarizedText': '회의 요약', 'schedules': schedules}
         generate = Mock(return_value=json.dumps(payload))
@@ -196,16 +197,16 @@ class SummaryWorkflowTest(unittest.TestCase):
                     updates.append(update)
         self.assertIsNone(updates[3]['normalize_dates']['result'])
         self.assertEqual(updates[3]['normalize_dates']['date_checks'], [
-            {'schedule_index': 0, 'status': 'normalized', 'expected_date': '2026-09-26', 'original_date': '2026-09-27'},
-            {'schedule_index': 1, 'status': 'matched', 'expected_date': '2026-09-28'},
+            {'schedule_index': 0, 'status': 'resolved', 'expected_date': '2026-09-26'},
+            {'schedule_index': 1, 'status': 'resolved', 'expected_date': '2026-09-28'},
             {'schedule_index': 2, 'status': 'unresolved'},
         ])
         self.assertEqual(generate.call_count, 2)
 
-    def test_wrong_explicit_date_is_normalized_when_repair_is_disabled(self):
+    def test_explicit_date_is_computed_when_repair_is_disabled(self):
         payload = {'summarizedText': '회의 요약', 'schedules': [{
             'dateExpression': '2026년 9월 28일 오전 10시',
-            'extractedScheduleDate': '2026-09-29T10:00:00', 'extractedScheduleContent': '리뷰',
+            'extractedScheduleContent': '리뷰',
             'status': 'confirmed', 'eventId': '리뷰', 'timeExpression': '오전 10시', 'evidence': '2026년 9월 28일 오전 10시',
         }]}
         generate = Mock(return_value=json.dumps(payload))
@@ -220,7 +221,7 @@ class SummaryWorkflowTest(unittest.TestCase):
 
     def test_tool_failure_is_not_treated_as_unsupported_or_repaired(self):
         payload = {'summarizedText': '회의 요약', 'schedules': [{
-            'dateExpression': '내일', 'extractedScheduleDate': '2026-09-26T10:00:00',
+            'dateExpression': '내일',
             'extractedScheduleContent': '제출',
             'status': 'confirmed', 'eventId': '제출', 'timeExpression': '오전 10시', 'evidence': '내일 오전 10시',
         }]}

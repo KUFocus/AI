@@ -11,7 +11,7 @@ def decision(source, day=None, clock=None, **changes):
     return {
         'eventId': 'submission', 'status': 'confirmed', 'evidence': source,
         'dateExpression': day, 'timeExpression': clock,
-        'extractedScheduleDate': None, 'extractedScheduleContent': '제출 마감',
+         'extractedScheduleContent': '제출 마감',
         **changes,
     }
 
@@ -21,21 +21,20 @@ def response(*schedules):
 
 
 class ScheduleTimeDefaultsTest(unittest.TestCase):
-    def test_date_only_deadlines_use_18_and_ignore_model_invented_clock(self):
+    def test_date_only_deadlines_use_18_without_model_datetime(self):
         for source, day, expected in [
             ('내일까지 제출해주세요.', '내일', '2026-09-26'),
             ('다음 주 화요일까지 완료해주세요.', '다음 주 화요일', '2026-09-29'),
         ]:
-            for invented in [None, expected, expected + 'T23:59:00']:
-                with self.subTest(source=source, invented=invented):
-                    model = Mock(return_value=response(decision(source, day, extractedScheduleDate=invented)))
-                    with patch('summary_workflow.resolve_schedule_time') as tool:
-                        result = MeetingSummarizer(model, now=lambda: datetime(2026, 9, 25, 10)).summarize(source)
-                    self.assertEqual(result['schedules'], [{
-                        'extractedScheduleDate': expected + 'T18:00:00', 'extractedScheduleContent': '제출 마감',
-                    }])
-                    tool.invoke.assert_not_called()
-                    model.assert_called_once()
+            with self.subTest(source=source):
+                model = Mock(return_value=response(decision(source, day)))
+                with patch('summary_workflow.resolve_schedule_time') as tool:
+                    result = MeetingSummarizer(model, now=lambda: datetime(2026, 9, 25, 10)).summarize(source)
+                self.assertEqual(result['schedules'], [{
+                    'extractedScheduleDate': expected + 'T18:00:00', 'extractedScheduleContent': '제출 마감',
+                }])
+                tool.invoke.assert_not_called()
+                model.assert_called_once()
 
     def test_time_only_uses_reference_date_and_keeps_explicit_period(self):
         for expression, expected in [('3시', '15:00:00'), ('8시', '08:00:00'),
@@ -65,9 +64,9 @@ class ScheduleTimeDefaultsTest(unittest.TestCase):
                 with self.assertRaises(ScheduleTimeExpressionError):
                     resolve_schedule_time.invoke({'expression': expression, 'assume_business_hours': True})
 
-    def test_missing_date_and_time_is_omitted_even_if_model_invents_timestamp(self):
+    def test_missing_date_and_time_is_omitted(self):
         source = '보고서를 제출해주세요.'
-        model = Mock(return_value=response(decision(source, extractedScheduleDate='2026-09-26T12:00:00')))
+        model = Mock(return_value=response(decision(source)))
         with patch('summary_workflow.resolve_schedule_date') as date_tool, patch('summary_workflow.resolve_schedule_time') as time_tool:
             result = MeetingSummarizer(model).summarize(source)
         self.assertEqual(result['schedules'], [])

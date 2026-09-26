@@ -6,21 +6,21 @@ from pydantic import ValidationError
 from schedule_history import resolve_schedule_history
 
 
-def decision(status, evidence, expression=None, timestamp=None, content='리뷰'):
+def decision(status, evidence, expression=None, content='리뷰'):
     return {
         'status': status, 'timeExpression': None, 'evidence': evidence, 'dateExpression': expression,
-        'extractedScheduleDate': timestamp, 'extractedScheduleContent': content,
+        'extractedScheduleContent': content,
     }
 
 
 class ScheduleHistoryTest(unittest.TestCase):
     def setUp(self):
         self.first = decision('confirmed', '리뷰는 내일 오전 10시로 확정합니다.',
-                              '내일', '2026-09-26T10:00:00')
+                              '내일')
         self.proposal = decision('tentative', '리뷰를 모레로 옮기면 어떨까요?')
         self.cancel = decision('cancelled', '리뷰 일정은 취소합니다.')
         self.changed = decision('confirmed', '리뷰는 모레 오전 11시로 다시 확정합니다.',
-                                '모레', '2026-09-27T11:00:00')
+                                '모레')
 
     def source(self, *decisions):
         return '\n'.join(item['evidence'] for item in decisions)
@@ -61,7 +61,7 @@ class ScheduleHistoryTest(unittest.TestCase):
 
     def test_separate_event_histories_do_not_cancel_each_other(self):
         release = decision('confirmed', '배포는 모레 오후 2시로 확정합니다.',
-                           '모레', '2026-09-27T14:00:00', content='배포')
+                           '모레', content='배포')
         source = self.source(self.first, release, self.cancel)
         self.assertIsNone(resolve_schedule_history([self.first, self.cancel], source))
         self.assertEqual(resolve_schedule_history([release], source), release)
