@@ -90,15 +90,24 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
         errors = []
         schedules = []
         for index, schedule in zip(state['schedule_indexes'], state['result']['schedules'], strict=True):
+            effective_time = schedule['timeExpression']
+            reclassified = False
             try:
                 if schedule['dateExpression'] is None:
                     expected_date = state['meeting_date']
                 else:
-                    expected_date = resolve_schedule_date.invoke({
-                        'expression': schedule['dateExpression'],
-                        'meeting_date': state['meeting_date'],
-                    })
-            except ScheduleDateExpressionError as error:
+                    try:
+                        expected_date = resolve_schedule_date.invoke({
+                            'expression': schedule['dateExpression'],
+                            'meeting_date': state['meeting_date'],
+                        })
+                    except ScheduleDateExpressionError:
+                        effective_time = recover_misclassified_time(schedule['dateExpression'], effective_time)
+                        if effective_time is None:
+                            raise
+                        expected_date = state['meeting_date']
+                        reclassified = True
+            except (ScheduleDateExpressionError, ScheduleTimeExpressionError) as error:
                 checks.append({'schedule_index': index, 'status': 'unresolved'})
                 errors.append(
                     f'schedules.{index}.dateExpression: {error} '
@@ -108,11 +117,14 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
                 continue
 
             check = {'schedule_index': index, 'status': 'resolved', 'expected_date': expected_date}
-            if schedule['dateExpression'] is None:
+            if schedule['dateExpression'] is None or reclassified:
                 check.update(status='defaulted', policy='reference_date')
                 logger.info('일정 %s는 날짜 표현이 없어 기준일 %s를 적용했습니다.', index, expected_date)
+            if reclassified:
+                check['reclassified_as'] = 'timeExpression'
+                logger.info('일정 %s의 날짜 칸에 있는 표현을 시각으로 분류했습니다. 원문 값은 유지합니다.', index)
             checks.append(check)
-            schedules.append({**schedule, 'resolvedDate': expected_date})
+            schedules.append({**schedule, 'resolvedDate': expected_date, 'effectiveTimeExpression': effective_time})
         if errors:
             feedback = '\n'.join(errors)
             if state['attempts'] >= max_attempts:
@@ -128,7 +140,7 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
         errors = []
         schedules = []
         for index, schedule in zip(state['schedule_indexes'], state['result']['schedules'], strict=True):
-            expression = schedule['timeExpression']
+            expression = schedule['effectiveTimeExpression']
             try:
                 clock = '18:00:00' if expression is None else resolve_schedule_time.invoke({
                     'expression': expression, 'assume_business_hours': True,
@@ -139,6 +151,8 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
                 continue
             day = schedule['resolvedDate']
             check = {'schedule_index': index, 'status': 'resolved', 'expected_time': clock}
+            if expression is not None and schedule['timeExpression'] is None:
+                check['source_field'] = 'dateExpression'
             if expression is None:
                 check.update(status='defaulted', policy='missing_time_18')
                 logger.info('일정 %s는 시각 표현이 없어 기본 시각 18:00을 적용했습니다.', index)
@@ -191,6 +205,20 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
     graph.add_conditional_edges('normalize_times', route_after_validation, {'repair': 'repair', 'end': END})
     graph.add_edge('repair', 'generate')
     return graph.compile()
+
+
+def recover_misclassified_time(date_expression: str, time_expression: str | None) -> str | None:
+    # 날짜 칸 전체가 시각 문법일 때만 분류를 보완한다. 조건이나 날짜 일부를 잘라내지 않는다.
+    try:
+        clock = resolve_schedule_time.invoke({'expression': date_expression, 'assume_business_hours': True})
+    except ScheduleTimeExpressionError:
+        return None
+    if time_expression is not None:
+        existing_clock = resolve_schedule_time.invoke({'expression': time_expression, 'assume_business_hours': True})
+        if clock != existing_clock:
+            raise ScheduleTimeExpressionError('날짜 칸과 시각 칸의 시각이 서로 달라 자동으로 선택할 수 없습니다.')
+        return time_expression
+    return date_expression
 
 
 def validation_feedback(error: json.JSONDecodeError | ValidationError) -> str:
