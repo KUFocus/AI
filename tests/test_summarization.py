@@ -34,9 +34,9 @@ class MeetingSummarizerTest(unittest.TestCase):
         self.assertEqual(len(requests), 1)
         self.assertEqual(requests[0][0]["role"], "system")
         self.assertIn("오늘의 날짜(2026-09-25)", requests[0][0]["content"])
-        self.assertEqual(requests[0][1], {
-            "role": "user",
-            "content": "다음 주 월요일 오후 3시에 디자인 리뷰를 진행한다.",
+        self.assertEqual(requests[0][1]['role'], 'user')
+        self.assertEqual(json.loads(requests[0][1]['content']), {
+            '1': '다음 주 월요일 오후 3시에 디자인 리뷰를 진행한다.',
         })
 
     def test_meeting_date_overrides_processing_date_only_for_that_request(self):

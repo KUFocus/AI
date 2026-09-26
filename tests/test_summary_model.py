@@ -58,6 +58,12 @@ class OpenAISummaryModelTest(unittest.TestCase):
         self.assertEqual(schema["properties"]["schedules"]["type"], "array")
         self.assertEqual(schema["properties"]["schedules"]["items"], {"$ref": "#/$defs/ScheduleDecision"})
         schedule = schema["$defs"]["ScheduleDecision"]
+        evidence = schema['$defs']['EvidenceRange']
+        self.assertEqual(schedule['properties']['evidence'], {'$ref': '#/$defs/EvidenceRange'})
+        self.assertEqual(set(evidence['required']), {'start', 'end'})
+        self.assertIs(evidence['additionalProperties'], False)
+        self.assertEqual(evidence['properties']['start']['type'], 'integer')
+        self.assertEqual(evidence['properties']['end']['type'], 'integer')
         self.assertEqual(schedule["type"], "object")
         self.assertIs(schedule["additionalProperties"], False)
         self.assertEqual(set(schedule["required"]), {"extractedScheduleContent", "dateExpression", "status", "evidence", "eventId", "timeExpression"})

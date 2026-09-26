@@ -1,6 +1,25 @@
 from summary_schema import SummaryResponse
 
 
+def model_response_schema():
+    schema = SummaryResponse.model_json_schema()
+
+    def remove_reference_metadata(value):
+        if isinstance(value, dict):
+            if '$ref' in value:
+                # API는 참조 옆의 설명 메타데이터를 허용하지 않는다. 검증 조건은 유지한다.
+                value.pop('title', None)
+                value.pop('description', None)
+            for child in value.values():
+                remove_reference_metadata(child)
+        elif isinstance(value, list):
+            for child in value:
+                remove_reference_metadata(child)
+
+    remove_reference_metadata(schema)
+    return schema
+
+
 class OpenAISummaryModel:
     def __init__(self, client):
         self.client = client
@@ -16,7 +35,7 @@ class OpenAISummaryModel:
                 "json_schema": {
                     "name": "meeting_summary",
                     "strict": True,
-                    "schema": SummaryResponse.model_json_schema(),
+                    "schema": model_response_schema(),
                 },
             },
         )
