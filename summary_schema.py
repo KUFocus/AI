@@ -33,6 +33,12 @@ class EvidenceRange(BaseModel):
             raise ValueError('근거 구간은 1 이상의 시작 번호와 그 이상의 끝 번호가 필요합니다.')
         return self
 
+    def resolve(self, input_text: str) -> str:
+        segments = source_segments(input_text)
+        if self.end > len(segments):
+            raise ValueError('근거 구간 번호가 회의 원문의 구간 수를 벗어났습니다.')
+        return ''.join(segments[self.start - 1:self.end])
+
 
 class ScheduleCandidate(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -52,10 +58,7 @@ class ScheduleCandidate(BaseModel):
         reference = EvidenceRange.model_validate(value, strict=True)
         if not isinstance(info.context, dict) or not isinstance(info.context.get('input_text'), str):
             raise ValueError('근거 발언 검증에 필요한 회의 원문이 없습니다.')
-        segments = source_segments(info.context['input_text'])
-        if reference.end > len(segments):
-            raise ValueError('근거 구간 번호가 회의 원문의 구간 수를 벗어났습니다.')
-        return ''.join(segments[reference.start - 1:reference.end])
+        return reference.resolve(info.context['input_text'])
 
     @field_validator('evidence')
     @classmethod

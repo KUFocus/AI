@@ -5,6 +5,7 @@ import httpx
 from openai import APITimeoutError, OpenAI
 
 from summary_model import OpenAISummaryModel
+from summarization import MeetingSummarizer
 
 
 class OpenAISummaryModelTest(unittest.TestCase):
@@ -71,6 +72,37 @@ class OpenAISummaryModelTest(unittest.TestCase):
         self.assertEqual(schedule["properties"]["status"]["enum"], ["confirmed", "tentative", "cancelled"])
         for name in ["dateExpression", "timeExpression"]:
             self.assertEqual(schedule["properties"][name]["anyOf"], [{"type": "string"}, {"type": "null"}])
+
+    def test_repair_routes_to_configured_model_with_its_own_output_limit(self):
+        bodies = []
+
+        def respond(request):
+            body = json.loads(request.content)
+            bodies.append(body)
+            content = json.dumps({'summarizedText': '수정된 요약', 'schedules': [{
+                'eventId': 'review', 'extractedScheduleContent': '검토', 'status': 'confirmed',
+                'dateExpression': '내일', 'timeExpression': None,
+                'evidence': {'start': 2 if len(bodies) == 1 else 1, 'end': 2},
+            }]})
+            return httpx.Response(200, json={
+                'id': 'test-repair', 'object': 'chat.completion', 'created': 0, 'model': body['model'],
+                'choices': [{'index': 0, 'finish_reason': 'stop',
+                             'message': {'role': 'assistant', 'content': content}}],
+            })
+
+        with OpenAI(api_key='test-only', base_url='http://model.test/v1', max_retries=0,
+                    http_client=httpx.Client(transport=httpx.MockTransport(respond))) as client:
+            result = MeetingSummarizer(
+                OpenAISummaryModel(client),
+                repair_complete=OpenAISummaryModel(client, model='gpt-4.1-2025-04-14', max_tokens=1000),
+            ).summarize('내일 검토할까요? 검토를 확정합니다.')
+
+        self.assertEqual(result['summarizedText'], '수정된 요약')
+        self.assertEqual(len(result['schedules']), 1)
+        self.assertEqual([(body['model'], body['max_tokens']) for body in bodies],
+                         [('gpt-4o-mini', 500), ('gpt-4.1-2025-04-14', 1000)])
+        self.assertEqual(bodies[0]['response_format'], bodies[1]['response_format'])
+        self.assertEqual(bodies[0]['messages'], bodies[1]['messages'][:2])
 
     def test_incomplete_refused_or_empty_response_is_rejected_without_retry(self):
         valid_json = '{"summarizedText": "회의 요약", "schedules": []}'

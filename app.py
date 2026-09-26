@@ -80,7 +80,10 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.5], std=[0.5])
 ])
 
-summarizer = MeetingSummarizer(OpenAISummaryModel(openai))
+summarizer = MeetingSummarizer(
+    OpenAISummaryModel(openai),
+    repair_complete=OpenAISummaryModel(openai, model="gpt-4.1-2025-04-14", max_tokens=1000),
+)
 app.register_blueprint(create_summary_blueprint(summarizer.summarize))
 
     

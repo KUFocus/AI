@@ -11,12 +11,12 @@ logger = logging.getLogger(__name__)
 
 
 class MeetingSummarizer:
-    def __init__(self, complete, now=None, *, repair_invalid_response=True):
+    def __init__(self, complete, now=None, *, repair_invalid_response=True, repair_complete=None):
         self.complete = complete
         self.now = now or (lambda: datetime.now(ZoneInfo('Asia/Seoul')))
         self.workflow = build_summary_workflow(
             self.generate_response, self.validate_response,
-            repair_invalid_response=repair_invalid_response,
+            repair_invalid_response=repair_invalid_response, repair_response=repair_complete,
         )
 
     def summarize(self, input_text, meeting_date: date | None = None):

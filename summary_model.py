@@ -21,14 +21,16 @@ def model_response_schema():
 
 
 class OpenAISummaryModel:
-    def __init__(self, client):
+    def __init__(self, client, *, model="gpt-4o-mini", max_tokens=500):
         self.client = client
+        self.model = model
+        self.max_tokens = max_tokens
 
     def __call__(self, messages):
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=self.model,
             messages=messages,
-            max_tokens=500,
+            max_tokens=self.max_tokens,
             temperature=0.7,
             response_format={
                 "type": "json_schema",

@@ -70,7 +70,7 @@ class SummaryWorkflowTest(unittest.TestCase):
                     }, stream_mode='updates'))
 
                 self.assertEqual([next(iter(update)) for update in updates], ['generate', 'validate', 'repair', 'generate', 'validate', 'resolve_histories', 'normalize_dates', 'normalize_times'])
-                self.assertEqual(updates[-4]['validate'], {'result': expected, 'validation_error': None})
+                self.assertEqual(updates[-4]['validate'], {'result': expected, 'validation_error': None, 'evidence_repair_required': False})
                 self.assertIsNone(updates[1]['validate']['result'])
                 self.assertEqual(generate.call_count, 2)
                 original = generate.call_args_list[0].args[0]
@@ -78,8 +78,8 @@ class SummaryWorkflowTest(unittest.TestCase):
                 self.assertEqual(original, messages)
                 self.assertEqual(len(original), 2)
                 self.assertEqual(repaired[:2], original)
-                self.assertEqual(repaired[2], {'role': 'assistant', 'content': invalid})
-                self.assertIn(feedback, repaired[3]['content'])
+                self.assertEqual(repaired[-2], {'role': 'assistant', 'content': invalid})
+                self.assertIn(feedback, repaired[-1]['content'])
 
     def test_stops_after_second_invalid_response(self):
         for content, error_type in [('{}', ValidationError), ('잘못된 JSON', json.JSONDecodeError)]:
