@@ -3,6 +3,11 @@ from summary_schema import SummaryResponse
 
 def model_response_schema():
     schema = SummaryResponse.model_json_schema()
+    decision = schema['$defs']['ScheduleDecision']
+    # 일정과 원문 근거를 먼저 작성한 뒤 상태와 날짜를 판단하도록 출력 순서를 맞춘다.
+    order = ('eventId', 'extractedScheduleContent', 'evidence', 'status', 'dateExpression', 'timeExpression')
+    decision['properties'] = {name: decision['properties'][name] for name in order}
+    decision['required'] = list(order)
 
     def remove_reference_metadata(value):
         if isinstance(value, dict):
@@ -21,7 +26,7 @@ def model_response_schema():
 
 
 class OpenAISummaryModel:
-    def __init__(self, client, *, model="gpt-4o-mini", max_tokens=500):
+    def __init__(self, client, *, model="gpt-4.1-2025-04-14", max_tokens=500):
         self.client = client
         self.model = model
         self.max_tokens = max_tokens

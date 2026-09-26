@@ -20,7 +20,7 @@ class OpenAISummaryModelTest(unittest.TestCase):
                 "id": "test-completion",
                 "object": "chat.completion",
                 "created": 0,
-                "model": "gpt-4o-mini",
+                "model": "gpt-4.1-2025-04-14",
                 "choices": [{
                     "index": 0,
                     "finish_reason": "stop",
@@ -42,7 +42,7 @@ class OpenAISummaryModelTest(unittest.TestCase):
         body = json.loads(requests[0].content)
         response_format = body.pop("response_format")
         self.assertEqual(body, {
-            "model": "gpt-4o-mini",
+            "model": "gpt-4.1-2025-04-14",
             "messages": messages,
             "max_tokens": 500,
             "temperature": 0.7,
@@ -59,6 +59,10 @@ class OpenAISummaryModelTest(unittest.TestCase):
         self.assertEqual(schema["properties"]["schedules"]["type"], "array")
         self.assertEqual(schema["properties"]["schedules"]["items"], {"$ref": "#/$defs/ScheduleDecision"})
         schedule = schema["$defs"]["ScheduleDecision"]
+        self.assertEqual(list(schedule['properties']), [
+            'eventId', 'extractedScheduleContent', 'evidence', 'status',
+            'dateExpression', 'timeExpression',
+        ])
         evidence = schema['$defs']['EvidenceRange']
         self.assertEqual(schedule['properties']['evidence'], {'$ref': '#/$defs/EvidenceRange'})
         self.assertEqual(set(evidence['required']), {'start', 'end'})
@@ -93,7 +97,7 @@ class OpenAISummaryModelTest(unittest.TestCase):
         with OpenAI(api_key='test-only', base_url='http://model.test/v1', max_retries=0,
                     http_client=httpx.Client(transport=httpx.MockTransport(respond))) as client:
             result = MeetingSummarizer(
-                OpenAISummaryModel(client),
+                OpenAISummaryModel(client, model="gpt-4o-mini"),
                 repair_complete=OpenAISummaryModel(client, model='gpt-4.1-2025-04-14', max_tokens=1000),
             ).summarize('내일 검토할까요? 검토를 확정합니다.')
 
