@@ -71,8 +71,8 @@ class ScheduleCandidatesTest(unittest.TestCase):
     def test_unconfirmed_candidates_cannot_supply_invented_dates(self):
         for status in ['tentative', 'cancelled']:
             with self.subTest(status=status):
-                with self.assertRaisesRegex(ValidationError, '미확정 또는 취소 일정의 날짜 표현은 null'):
-                    MeetingSummarizer.validate_response(response([candidate(status=status)]), SOURCE)
+                with self.assertRaisesRegex(ValidationError, '날짜 표현이 회의 원문에 그대로 존재하지 않습니다'):
+                    MeetingSummarizer.validate_response(response([candidate(status=status, dateExpression='내년 1월 1일')]), SOURCE)
 
     def test_blank_or_fabricated_evidence_is_rejected_even_for_excluded_candidates(self):
         for quote in ['', '   ', '참석자 모두 동의하여 발표를 확정합니다.']:

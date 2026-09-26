@@ -113,11 +113,11 @@ class ScheduleTimeWorkflowTest(unittest.TestCase):
         self.assertEqual(result['schedules'], [])
         tool.invoke.assert_not_called()
 
-    def test_unconfirmed_schedule_cannot_keep_time_expression(self):
+    def test_unconfirmed_schedule_cannot_invent_time_expression(self):
         for status in ['tentative', 'cancelled']:
             with self.subTest(status=status):
-                value = schedule(status=status, dateExpression=None)
-                with self.assertRaisesRegex(ValidationError, '미확정 또는 취소 일정의 시각 표현은 null'):
+                value = schedule(status=status, dateExpression=None, timeExpression='오전 1시')
+                with self.assertRaisesRegex(ValidationError, '시각 표현이 회의 원문에 그대로 존재하지 않습니다'):
                     MeetingSummarizer.validate_response(response(value), SOURCE)
 
     def test_unexpected_time_tool_failure_is_not_retried(self):

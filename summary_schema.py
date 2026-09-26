@@ -7,8 +7,8 @@ class ScheduleCandidate(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     extractedScheduleContent: str
-    dateExpression: str | None = Field(description='원문의 날짜 표현. 날짜가 없거나 미확정 또는 취소이면 null')
-    timeExpression: str | None = Field(description='원문에서 그대로 가져온 시각 표현. 시각이 없거나 미확정 또는 취소이면 null')
+    dateExpression: str | None = Field(description='해당 근거 발언에 있는 원문의 날짜 표현. 언급이 없으면 null. 확정 여부는 status로 구분')
+    timeExpression: str | None = Field(description='해당 근거 발언에 있는 원문의 시각 표현. 언급이 없으면 null. 확정 여부는 status로 구분')
     status: Literal['confirmed', 'tentative', 'cancelled'] = Field(description='해당 발언 시점의 확정, 미확정 또는 취소 상태')
     evidence: str = Field(description='해당 결정의 근거가 되는 원문 발언을 그대로 복사')
 
@@ -58,18 +58,13 @@ class ScheduleCandidate(BaseModel):
 
     @model_validator(mode='after')
     def validate_status_and_expressions(self):
-        if self.status == 'confirmed':
-            if self.dateExpression is not None and self.dateExpression not in self.evidence:
-                raise ValueError(
-                    '확정 일정의 날짜 표현이 근거 발언에 포함되어야 합니다. '
-                    '해당 결정의 날짜와 확정 발언을 함께 포함한 원문 구간을 확인해 주세요.'
-                )
-            if self.timeExpression is not None and self.timeExpression not in self.evidence:
-                raise ValueError('확정 일정의 시각 표현이 근거 발언에 포함되어야 합니다.')
-        elif self.dateExpression is not None:
-            raise ValueError('미확정 또는 취소 일정의 날짜 표현은 null이어야 합니다.')
-        elif self.timeExpression is not None:
-            raise ValueError('미확정 또는 취소 일정의 시각 표현은 null이어야 합니다.')
+        if self.dateExpression is not None and self.dateExpression not in self.evidence:
+            raise ValueError(
+                '일정의 날짜 표현이 근거 발언에 포함되어야 합니다. '
+                '해당 결정의 날짜와 상태를 함께 포함한 원문 구간을 확인해 주세요.'
+            )
+        if self.timeExpression is not None and self.timeExpression not in self.evidence:
+            raise ValueError('일정의 시각 표현이 근거 발언에 포함되어야 합니다.')
         return self
 
 
