@@ -14,8 +14,20 @@ class IndexResult:
     source_hash: str
 
 
+@dataclass(frozen=True)
+class SearchHit:
+    project_id: int
+    minutes_id: int
+    chunk_index: int
+    text: str
+    start: int
+    end: int
+    score: float
+    source_hash: str
+
+
 class LocalMeetingIndex:
-    """회의별 원문과 벡터를 로컬에 저장한다. 검색과 접근 권한 검사는 별도 계층의 역할이다."""
+    """회의별 원문과 벡터를 저장하고 프로젝트 안에서 검색한다. 접근 권한 검사는 별도 계층에서 수행한다."""
 
     def __init__(self, database_path, chunker, embeddings, *, pipeline_version: str):
         if not isinstance(pipeline_version, str) or not pipeline_version.strip():
@@ -71,12 +83,7 @@ class LocalMeetingIndex:
             for chunk, vector in zip(chunks, vectors):
                 if not 0 <= chunk.start < chunk.end <= len(text) or text[chunk.start:chunk.end] != chunk.text:
                     raise ValueError('청크의 위치와 회의 원문이 일치하지 않습니다.')
-                if len(vector) != self.embeddings.dimensions or any(
-                    type(value) not in (int, float) or not math.isfinite(value) for value in vector
-                ):
-                    raise ValueError('저장할 임베딩 벡터의 차원 또는 숫자 값이 올바르지 않습니다.')
-                if not math.isclose(sum(value * value for value in vector), 1, abs_tol=1e-4):
-                    raise ValueError('저장할 임베딩 벡터는 단위 벡터여야 합니다.')
+                self._validate_vector(vector)
                 records.append({'index': chunk.index, 'start': chunk.start, 'end': chunk.end,
                                 'text': chunk.text, 'token_count': chunk.token_count, 'vector': vector})
             connection.execute('''INSERT INTO meeting_index VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -101,3 +108,43 @@ class LocalMeetingIndex:
         return {'project_id': project_id, 'minutes_id': minutes_id, 'source_hash': row[0],
                 'pipeline_version': row[1], 'source_text': row[2],
                 'dimensions': row[3], 'chunks': json.loads(row[4])}
+
+    def _validate_vector(self, vector):
+        if not isinstance(vector, list) or len(vector) != self.embeddings.dimensions or any(
+            type(value) not in (int, float) or not math.isfinite(value) for value in vector
+        ):
+            raise ValueError('임베딩 벡터의 차원 또는 숫자 값이 올바르지 않습니다.')
+        if not math.isclose(sum(value * value for value in vector), 1, abs_tol=1e-4):
+            raise ValueError('임베딩 벡터는 단위 벡터여야 합니다.')
+
+    def search(self, project_id: int, question: str, *, minutes_id: int | None = None,
+               top_k: int = 5) -> list[SearchHit]:
+        """유사한 근거 후보를 반환한다. 유사도는 답변 가능성이나 정확도 확률이 아니다."""
+        self._validate_ids(project_id, 1 if minutes_id is None else minutes_id)
+        if not isinstance(question, str) or not question.strip():
+            raise ValueError('검색 질문은 비어 있지 않은 문자열이어야 합니다.')
+        if type(top_k) is not int or not 1 <= top_k <= 50:
+            raise ValueError('검색 결과 수는 1 이상 50 이하의 정수여야 합니다.')
+        sql = ('SELECT minutes_id, source_hash, chunks_json FROM meeting_index '
+               'WHERE project_id = ? AND pipeline_version = ? AND dimensions = ?')
+        parameters = [project_id, self.pipeline_version, self.embeddings.dimensions]
+        if minutes_id is not None:
+            sql += ' AND minutes_id = ?'
+            parameters.append(minutes_id)
+        # 프로젝트와 임베딩 버전이 맞는 데이터만 읽어 다른 벡터 공간과 섞지 않는다.
+        with closing(self._connect()) as connection:
+            rows = connection.execute(sql, parameters).fetchall()
+        if not rows:
+            return []
+        query = self.embeddings.embed_query(question)
+        self._validate_vector(query)
+        hits = []
+        for stored_minutes_id, source_hash, chunks_json in rows:
+            for chunk in json.loads(chunks_json):
+                vector = chunk['vector']
+                self._validate_vector(vector)
+                # 저장과 질문 양쪽이 단위 벡터이므로 내적이 코사인 유사도다.
+                score = max(-1.0, min(1.0, sum(a * b for a, b in zip(query, vector))))
+                hits.append(SearchHit(project_id, stored_minutes_id, chunk['index'],
+                                      chunk['text'], chunk['start'], chunk['end'], score, source_hash))
+        return sorted(hits, key=lambda hit: (-hit.score, hit.minutes_id, hit.chunk_index))[:top_k]
