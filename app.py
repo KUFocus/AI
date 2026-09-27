@@ -22,6 +22,8 @@ from summary_model import OpenAISummaryModel
 from summary_routes import create_summary_blueprint
 from meeting_index_routes import create_meeting_index_blueprint
 from meeting_index_runtime import create_local_index_provider
+from meeting_answer_routes import create_meeting_answer_blueprint
+from meeting_answer_runtime import create_meeting_answer_completion
 
 # .env 파일에서 환경 변수 로드
 load_dotenv()
@@ -87,11 +89,15 @@ summarizer = MeetingSummarizer(
     repair_complete=OpenAISummaryModel(openai, max_tokens=1000),
 )
 app.register_blueprint(create_summary_blueprint(summarizer.summarize))
-app.register_blueprint(create_meeting_index_blueprint(create_local_index_provider(
+meeting_index_provider = create_local_index_provider(
     os.getenv('MEETING_EMBEDDING_MODEL_DIR'),
     os.getenv('MEETING_INDEX_DATABASE'),
     os.getenv('MEETING_EMBEDDING_REVISION'),
-), database_path=os.getenv('MEETING_INDEX_DATABASE')))
+)
+app.register_blueprint(create_meeting_index_blueprint(
+    meeting_index_provider, database_path=os.getenv('MEETING_INDEX_DATABASE')))
+app.register_blueprint(create_meeting_answer_blueprint(
+    meeting_index_provider, create_meeting_answer_completion(os.getenv('OPENAI_API_KEY'))))
 
     
 # 음성 파일을 처리하는 엔드포인트
