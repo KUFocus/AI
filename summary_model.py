@@ -3,6 +3,11 @@ from summary_schema import SummaryResponse
 
 def model_response_schema():
     schema = SummaryResponse.model_json_schema()
+    schema['required'] = ['summaryTasks', 'summarizedText', 'schedules']
+    task = schema['$defs']['SummaryTask']
+    task_order = ('evidence', 'assignees', 'task')
+    task['properties'] = {name: task['properties'][name] for name in task_order}
+    task['required'] = list(task_order)
     decision = schema['$defs']['ScheduleDecision']
     # 일정과 원문 근거를 먼저 작성한 뒤 상태와 날짜를 판단하도록 출력 순서를 맞춘다.
     order = ('eventId', 'extractedScheduleContent', 'evidence', 'status', 'dateExpression', 'timeExpression', 'dateReference', 'timeReference')

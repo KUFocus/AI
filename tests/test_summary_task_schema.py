@@ -1,4 +1,10 @@
 import unittest
+import json
+from unittest.mock import Mock
+
+from summarization import MeetingSummarizer
+from summary_workflow import build_summary_workflow
+from summary_model import model_response_schema
 
 from pydantic import ValidationError
 
@@ -75,6 +81,64 @@ class SummaryTaskTests(unittest.TestCase):
         for source in ['', '   ']:
             with self.subTest(source=source), self.assertRaises(ValidationError):
                 self.parse(self.payload(assignees=[]), source)
+
+
+class SummaryTaskIntegrationTests(unittest.TestCase):
+    def test_issue_only_summary_does_not_require_assignees_or_tasks(self):
+        payload = {'summaryTasks': [], 'summarizedText': '결제 지연 문제가 보고됐으며 원인은 미확인이다.', 'schedules': []}
+        complete = Mock(return_value=json.dumps(payload, ensure_ascii=False))
+        result = MeetingSummarizer(complete).summarize('결제 지연 문제가 보고됐습니다. 원인은 아직 모릅니다.')
+        self.assertEqual(result, {'summarizedText': payload['summarizedText'], 'schedules': []})
+        self.assertEqual(complete.call_count, 1)
+
+    def test_tasks_remain_internal_while_summary_preserves_unassigned_issue(self):
+        source = '결제 지연 원인은 아직 모릅니다.\n민수: 제가 서버 기록을 확인할게요.'
+        task = {'assignees': ['민수'], 'task': '서버 기록을 확인한다.', 'evidence': {'start': 2, 'end': 2}}
+        payload = {'summaryTasks': [task], 'summarizedText': '결제 지연 원인은 미확인이고 민수가 서버 기록을 확인한다.', 'schedules': []}
+        complete = Mock(return_value=json.dumps(payload, ensure_ascii=False))
+        workflow = build_summary_workflow(complete, MeetingSummarizer.validate_response)
+        state = workflow.invoke({'messages': [], 'input_text': source})
+        self.assertEqual(state['summary_tasks'], [task])
+        self.assertEqual(state['result'], {'summarizedText': payload['summarizedText'], 'schedules': []})
+        self.assertEqual(complete.call_count, 1)
+        complete.return_value = json.dumps({'summaryTasks': [], 'summarizedText': '원인은 미확인이다.', 'schedules': []})
+        state = workflow.invoke({'messages': [], 'input_text': '원인은 아직 모릅니다.'})
+        self.assertEqual(state['summary_tasks'], [])
+
+    def test_invalid_task_uses_existing_bounded_repair(self):
+        source = '민수: 제가 서버 기록을 확인할게요.'
+        base = {'summarizedText': '민수가 서버 기록을 확인한다.', 'schedules': []}
+        bad = {**base, 'summaryTasks': [{'assignees': ['지연'], 'task': '서버 기록을 확인한다.', 'evidence': {'start': 1, 'end': 1}}]}
+        good = {**base, 'summaryTasks': [{**bad['summaryTasks'][0], 'assignees': ['민수']}]}
+        complete = Mock(side_effect=[json.dumps(bad), json.dumps(good)])
+        with self.assertLogs('summary_workflow', level='WARNING'):
+            result = MeetingSummarizer(complete).summarize(source)
+        self.assertEqual(result, base)
+        self.assertEqual(complete.call_count, 2)
+        feedback = complete.call_args_list[1].args[0][-1]['content']
+        self.assertIn('summaryTasks.0', feedback)
+        self.assertIn('담당자 이름이 선택한 업무 근거 구간에 존재하지 않습니다.', feedback)
+
+    def test_repeated_invalid_task_does_not_start_unbounded_retries(self):
+        payload = {'summaryTasks': [{'assignees': ['민수'], 'task': '확인한다.', 'evidence': {'start': 9, 'end': 9}}], 'summarizedText': '이슈가 보고됐다.', 'schedules': []}
+        complete = Mock(return_value=json.dumps(payload))
+        with self.assertLogs('summary_workflow', level='WARNING'), self.assertRaises(ValidationError):
+            MeetingSummarizer(complete).summarize('이슈가 보고됐습니다.')
+        self.assertEqual(complete.call_count, 2)
+
+    def test_new_model_schema_requires_tasks_but_accepts_empty_lists(self):
+        schema = model_response_schema()
+        self.assertEqual(list(schema['properties']), ['summaryTasks', 'summarizedText', 'schedules'])
+        self.assertIn('summaryTasks', schema['required'])
+        self.assertNotIn('minItems', schema['properties']['summaryTasks'])
+        task = schema['$defs']['SummaryTask']
+        self.assertEqual(list(task['properties']), ['evidence', 'assignees', 'task'])
+        self.assertEqual(set(task['required']), set(task['properties']))
+        self.assertFalse(task['additionalProperties'])
+
+    def test_preexisting_response_without_task_metadata_remains_readable(self):
+        payload = {'summarizedText': '원인이 밝혀지지 않았다.', 'schedules': []}
+        self.assertEqual(MeetingSummarizer.validate_response(json.dumps(payload), '원인이 밝혀지지 않았다.'), payload)
 
 
 if __name__ == '__main__':

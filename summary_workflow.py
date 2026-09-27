@@ -28,6 +28,7 @@ class SummaryState(TypedDict, total=False):
     omitted_schedule_indexes: list[int]
     response_content: str
     summarized_text: str | None
+    summary_tasks: list[dict]
     schedules: list[dict] | None
     result: dict | None
     attempts: int
@@ -53,6 +54,7 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
             result = validate_response(state['response_content'], state['input_text'])
             return {
                 'summarized_text': result['summarizedText'], 'schedules': result['schedules'],
+                'summary_tasks': result.get('summaryTasks', []),
                 'result': None, 'validation_error': None, 'evidence_repair_required': False,
             }
         except (json.JSONDecodeError, ValidationError) as error:
@@ -62,7 +64,7 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
                 evidence_mismatch_detail(item, state['input_text']) is not None
                 for item in error.errors(include_input=True, include_url=False)
             )
-            return {'summarized_text': None, 'schedules': None, 'result': None,
+            return {'summarized_text': None, 'summary_tasks': [], 'schedules': None, 'result': None,
                     'validation_error': validation_feedback(error, state['input_text']),
                     'evidence_repair_required': evidence_repair_required}
 
@@ -218,7 +220,8 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
                 f"검증 오류: {state['validation_error']}\n"
                 '원래 회의 내용과 기준일을 유지하고 오류를 수정한 전체 JSON 응답을 작성해 주세요. '
                 '필수 항목과 자료형, 원문의 날짜와 시각 표현, 비어 있지 않은 일정 내용을 확인해 주세요. 계산한 날짜와 시각은 반환하지 마세요. '
-                '검증을 통과하려고 원문에 없는 일정을 만들거나 일정을 임의로 삭제하지 마세요.'
+                '검증을 통과하려고 원문에 없는 일정을 만들거나 일정을 임의로 삭제하지 마세요. '
+                'summaryTasks의 담당자와 업무는 원문 근거를 확인해 수정하고, 중요한 이슈나 결정을 업무 목록에 없다는 이유로 요약에서 지우지 마세요.'
             )},
         ]}
 

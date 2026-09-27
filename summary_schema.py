@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from source_evidence import EvidenceRange, source_segments
+from summary_task_schema import SummaryTask
 
 
 class TemporalReference(BaseModel):
@@ -124,5 +125,7 @@ class ScheduleDecision(ScheduleCandidate):
 class SummaryResponse(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
+    # 기존 저장 응답은 업무 근거 없이도 읽되 새 모델 출력에는 이 필드를 요구한다.
+    summaryTasks: list[SummaryTask] = Field(default_factory=list)
     summarizedText: str
     schedules: list[ScheduleDecision]

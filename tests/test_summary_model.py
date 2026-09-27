@@ -55,8 +55,8 @@ class OpenAISummaryModelTest(unittest.TestCase):
         schema = response_format["json_schema"]["schema"]
         self.assertEqual(schema["type"], "object")
         self.assertIs(schema["additionalProperties"], False)
-        self.assertEqual(set(schema["required"]), {"summarizedText", "schedules"})
-        self.assertEqual(set(schema["properties"]), {"summarizedText", "schedules"})
+        self.assertEqual(set(schema["required"]), {"summaryTasks", "summarizedText", "schedules"})
+        self.assertEqual(set(schema["properties"]), {"summaryTasks", "summarizedText", "schedules"})
         self.assertEqual(schema["properties"]["summarizedText"]["type"], "string")
         self.assertEqual(schema["properties"]["schedules"]["type"], "array")
         self.assertEqual(schema["properties"]["schedules"]["items"], {"$ref": "#/$defs/ScheduleDecision"})

@@ -72,6 +72,7 @@ class SummaryWorkflowTest(unittest.TestCase):
                 self.assertEqual([next(iter(update)) for update in updates], ['generate', 'validate', 'repair', 'generate', 'validate', 'resolve_histories', 'normalize_dates', 'normalize_times', 'assemble_result'])
                 self.assertEqual(updates[-5]['validate'], {
                     'summarized_text': expected['summarizedText'], 'schedules': expected['schedules'],
+                    'summary_tasks': [],
                     'result': None, 'validation_error': None, 'evidence_repair_required': False,
                 })
                 self.assertIsNone(updates[1]['validate']['result'])
