@@ -10,6 +10,7 @@ class LocalMeetingEmbeddings(Embeddings):
 
     dimensions = 384
     max_tokens = 512
+    document_prefix = 'passage: '
 
     def __init__(self, tokenizer, model, *, batch_size: int = 8):
         if type(batch_size) is not int or batch_size < 1:
@@ -37,7 +38,15 @@ class LocalMeetingEmbeddings(Embeddings):
         return cls(tokenizer, model, batch_size=batch_size)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return self._embed(texts, prefix='passage: ')
+        return self._embed(texts, prefix=self.document_prefix)
+
+    def count_document_tokens(self, text: str) -> int:
+        if not isinstance(text, str):
+            raise ValueError('토큰 수를 계산할 원문은 문자열이어야 합니다.')
+        encoded = self.tokenizer(
+            self.document_prefix + text, add_special_tokens=True, truncation=False,
+        )
+        return len(encoded['input_ids'])
 
     def embed_query(self, text: str) -> list[float]:
         return self._embed([text], prefix='query: ')[0]

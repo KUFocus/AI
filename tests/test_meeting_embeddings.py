@@ -36,6 +36,18 @@ class MeetingEmbeddingsTests(unittest.TestCase):
         self.assertAlmostEqual(vector[1], 0.8)
         self.assertEqual(vector[2], 0)
 
+    def test_document_token_count_includes_prefix_and_special_tokens(self):
+        embedder = self.make_embedder()
+        embedder.tokenizer.side_effect = None
+        embedder.tokenizer.return_value = {'input_ids': [0, 1, 2, 3, 4]}
+        self.assertEqual(embedder.count_document_tokens('회의 원문'), 5)
+        embedder.tokenizer.assert_called_once_with(
+            'passage: 회의 원문', add_special_tokens=True, truncation=False,
+        )
+        embedder.model.assert_not_called()
+        with self.assertRaises(ValueError):
+            embedder.count_document_tokens(None)
+
     def test_query_and_document_prefixes_differ_for_korean(self):
         embedder = self.make_embedder()
         embedder.embed_documents(['민수가 기록을 보관한다.'])
