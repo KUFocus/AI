@@ -91,7 +91,7 @@ app.register_blueprint(create_meeting_index_blueprint(create_local_index_provide
     os.getenv('MEETING_EMBEDDING_MODEL_DIR'),
     os.getenv('MEETING_INDEX_DATABASE'),
     os.getenv('MEETING_EMBEDDING_REVISION'),
-)))
+), database_path=os.getenv('MEETING_INDEX_DATABASE')))
 
     
 # 음성 파일을 처리하는 엔드포인트

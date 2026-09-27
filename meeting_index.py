@@ -95,6 +95,21 @@ class LocalMeetingIndex:
                  self.embeddings.dimensions, json.dumps(records, ensure_ascii=False, allow_nan=False)))
             return IndexResult(True, len(records), source_hash)
 
+    @classmethod
+    def delete_saved(cls, database_path, project_id: int, minutes_id: int) -> bool:
+        """모델을 적재하지 않고 해당 프로젝트의 회의 원문과 벡터를 함께 삭제한다."""
+        cls._validate_ids(project_id, minutes_id)
+        path = Path(database_path).resolve()
+        if not path.exists():
+            return False
+        # 잘못된 경로에 빈 DB를 생성하지 않도록 기존 파일만 연다.
+        with closing(sqlite3.connect(path.as_uri() + '?mode=rw', uri=True, timeout=30)) as connection, connection:
+            cursor = connection.execute(
+                'DELETE FROM meeting_index WHERE project_id = ? AND minutes_id = ?',
+                (project_id, minutes_id),
+            )
+            return cursor.rowcount > 0
+
     def get(self, project_id: int, minutes_id: int) -> dict | None:
         self._validate_ids(project_id, minutes_id)
         with closing(self._connect()) as connection:
