@@ -1,4 +1,4 @@
-from meeting_index import LocalMeetingIndex
+from meeting_index import LocalMeetingIndex, DeletedMeetingError
 
 from flask import Blueprint, current_app, jsonify, request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -41,6 +41,8 @@ def create_meeting_index_blueprint(index_provider, database_path=None):
             return jsonify({'projectId': data.projectId, 'minutesId': data.minutesId,
                             'changed': result.changed, 'chunkCount': result.chunk_count,
                             'sourceHash': result.source_hash}), 200
+        except DeletedMeetingError:
+            return jsonify({'error': '삭제된 회의록은 다시 색인할 수 없습니다.'}), 409
         except Exception:
             current_app.logger.exception('회의록 색인 처리 중 오류가 발생했습니다.')
             return jsonify({'error': '회의록을 색인하지 못했습니다.'}), 500

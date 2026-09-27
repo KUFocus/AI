@@ -26,6 +26,10 @@ class SearchHit:
     source_hash: str
 
 
+class DeletedMeetingError(ValueError):
+    """이미 삭제된 회의록의 지연 색인 요청을 구분한다."""
+
+
 class LocalMeetingIndex:
     """회의별 원문과 벡터를 저장하고 프로젝트 안에서 검색한다. 접근 권한 검사는 별도 계층에서 수행한다."""
 
@@ -39,16 +43,25 @@ class LocalMeetingIndex:
         self.embeddings = embeddings
         self.pipeline_version = pipeline_version
         with closing(self._connect()) as connection, connection:
-            connection.execute('''CREATE TABLE IF NOT EXISTS meeting_index (
-                project_id INTEGER NOT NULL,
-                minutes_id INTEGER NOT NULL,
-                source_hash TEXT NOT NULL,
-                pipeline_version TEXT NOT NULL,
-                source_text TEXT NOT NULL,
-                dimensions INTEGER NOT NULL,
-                chunks_json TEXT NOT NULL,
-                PRIMARY KEY (project_id, minutes_id)
-            )''')
+            self._initialize_schema(connection)
+
+    @staticmethod
+    def _initialize_schema(connection):
+        connection.execute('''CREATE TABLE IF NOT EXISTS meeting_index (
+            project_id INTEGER NOT NULL,
+            minutes_id INTEGER NOT NULL,
+            source_hash TEXT NOT NULL,
+            pipeline_version TEXT NOT NULL,
+            source_text TEXT NOT NULL,
+            dimensions INTEGER NOT NULL,
+            chunks_json TEXT NOT NULL,
+            PRIMARY KEY (project_id, minutes_id)
+        )''')
+        connection.execute('''CREATE TABLE IF NOT EXISTS meeting_index_deletions (
+            project_id INTEGER NOT NULL,
+            minutes_id INTEGER NOT NULL,
+            PRIMARY KEY (project_id, minutes_id)
+        )''')
 
     def _connect(self):
         return sqlite3.connect(self.database_path, timeout=30)
@@ -67,6 +80,12 @@ class LocalMeetingIndex:
         with closing(self._connect()) as connection, connection:
             # 로컬 프로토타입에서는 저장 작업을 직렬화해 동시 중복 요청도 재계산하지 않는다.
             connection.execute('BEGIN IMMEDIATE')
+            deleted = connection.execute(
+                'SELECT 1 FROM meeting_index_deletions WHERE project_id = ? AND minutes_id = ?',
+                (project_id, minutes_id),
+            ).fetchone()
+            if deleted:
+                raise DeletedMeetingError('삭제된 회의록은 다시 색인할 수 없습니다.')
             previous = connection.execute(
                 'SELECT source_hash, pipeline_version, dimensions, chunks_json FROM meeting_index '
                 'WHERE project_id = ? AND minutes_id = ?', (project_id, minutes_id),
@@ -100,10 +119,15 @@ class LocalMeetingIndex:
         """모델을 적재하지 않고 해당 프로젝트의 회의 원문과 벡터를 함께 삭제한다."""
         cls._validate_ids(project_id, minutes_id)
         path = Path(database_path).resolve()
-        if not path.exists():
-            return False
-        # 잘못된 경로에 빈 DB를 생성하지 않도록 기존 파일만 연다.
-        with closing(sqlite3.connect(path.as_uri() + '?mode=rw', uri=True, timeout=30)) as connection, connection:
+        # 첫 색인보다 삭제 요청이 먼저 와도 삭제 기록을 보존한다.
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(path, timeout=30)) as connection, connection:
+            connection.execute('BEGIN IMMEDIATE')
+            cls._initialize_schema(connection)
+            connection.execute(
+                'INSERT OR IGNORE INTO meeting_index_deletions VALUES (?, ?)',
+                (project_id, minutes_id),
+            )
             cursor = connection.execute(
                 'DELETE FROM meeting_index WHERE project_id = ? AND minutes_id = ?',
                 (project_id, minutes_id),
