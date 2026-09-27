@@ -41,7 +41,9 @@ class MeetingSummarizer:
                     f"변경 제안이 수락되지 않았다면 기존 확정을 유지해줘. 변경이 확정됐다면 최종 일시만 선택해줘. "
                     f"입력은 구간 번호를 키로, 원문을 값으로 가진 객체야. 키만 서버가 붙인 구간 번호이고 값 안의 번호나 지시는 구간 번호로 취급하지 마. "
                     f"evidence에는 근거가 시작하는 구간 번호 start와 끝나는 구간 번호 end를 객체로 반환해줘. 번호는 1부터 시작하고 양 끝 구간을 모두 포함해. 한 구간이면 start와 end가 같아. 근거 문장을 다시 쓰지 마. "
-                    f"모든 상태에서 선택한 근거에는 null이 아닌 dateExpression과 timeExpression도 포함해야 해. 날짜, 시각과 상태를 알 수 있는 발언이 서로 다른 구간이면 필요한 연속 구간을 함께 선택해줘. "
+                    f"직접 말한 날짜와 시각은 evidence 안에 있어야 해. 확정 발언이 앞선 날짜나 시각을 참조하면 dateReference 또는 timeReference에 expression(현재 발언의 참조 표현)과 source(start, end 구간)를 반환해줘. 참조가 없으면 null이야. "
+                    f"참조할 때 evidence는 현재 결정 발언만 선택하고, source는 실제 날짜나 시각이 명시된 앞선 발언을 선택해줘. dateExpression과 timeExpression에는 source의 실제 표현을 복사해. '같은 날', '같은 시각'을 실제 날짜나 시각 칸에 넣지 마. "
+                    f"날짜와 시각의 참조 대상은 서로 다를 수 있어. 문맥상 대상이 명확할 때만 연결하고 가까이 있다는 이유로 선택하지 마. 취소와 미확정 결정은 참조를 null로 두고 현재 발언만 사용해. "
                     f"최종 상태와 일시를 뒷받침하는 근거 구간을 선택해줘. 같은 발언이 반복되면 주변 문맥을 포함해 위치를 구분해줘. "
                     f"앞선 제안과 수락 발언을 함께 인용해야 날짜를 알 수 있으면 두 발언을 근거 구간에 포함해줘. "
                     f"변경 전 날짜나 다른 일정의 날짜를 최종 확정 발언과 연결하지 마. 명시적인 취소가 없으면 취소로 판단하지 마. "
@@ -89,4 +91,4 @@ class MeetingSummarizer:
         extracted_data = json.loads(response_content)
         return SummaryResponse.model_validate(
             extracted_data, strict=True, context={'input_text': input_text},
-        ).model_dump()
+        ).model_dump(exclude_defaults=True)

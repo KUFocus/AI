@@ -77,10 +77,10 @@ class ScheduleHistoryWorkflowTest(unittest.TestCase):
             }, stream_mode='updates'))
         self.assertEqual([next(iter(update)) for update in updates], [
             'generate', 'validate', 'resolve_histories', 'repair',
-            'generate', 'validate', 'resolve_histories', 'normalize_dates', 'normalize_times',
+            'generate', 'validate', 'resolve_histories', 'normalize_dates', 'normalize_times', 'assemble_result',
         ])
         self.assertIsNone(updates[2]['resolve_histories']['result'])
-        self.assertEqual(updates[-3]['resolve_histories']['result']['schedules'][0]['dateExpression'], '모레')
+        self.assertEqual(updates[-4]['resolve_histories']['schedules'][0]['dateExpression'], '모레')
         self.assertIn('일정 식별자 review', model.call_args.args[0][-1]['content'])
         self.assertEqual(model.call_count, 2)
 

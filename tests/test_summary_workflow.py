@@ -69,8 +69,11 @@ class SummaryWorkflowTest(unittest.TestCase):
                         'messages': messages, 'input_text': messages[1]['content'], 'meeting_date': '2026-09-25',
                     }, stream_mode='updates'))
 
-                self.assertEqual([next(iter(update)) for update in updates], ['generate', 'validate', 'repair', 'generate', 'validate', 'resolve_histories', 'normalize_dates', 'normalize_times'])
-                self.assertEqual(updates[-4]['validate'], {'result': expected, 'validation_error': None, 'evidence_repair_required': False})
+                self.assertEqual([next(iter(update)) for update in updates], ['generate', 'validate', 'repair', 'generate', 'validate', 'resolve_histories', 'normalize_dates', 'normalize_times', 'assemble_result'])
+                self.assertEqual(updates[-5]['validate'], {
+                    'summarized_text': expected['summarizedText'], 'schedules': expected['schedules'],
+                    'result': None, 'validation_error': None, 'evidence_repair_required': False,
+                })
                 self.assertIsNone(updates[1]['validate']['result'])
                 self.assertEqual(generate.call_count, 2)
                 original = generate.call_args_list[0].args[0]
@@ -137,19 +140,26 @@ class SummaryWorkflowTest(unittest.TestCase):
         }, stream_mode='updates'))
 
         self.assertEqual([next(iter(update)) for update in updates], [
-            'generate', 'validate', 'resolve_histories', 'normalize_dates', 'normalize_times',
+            'generate', 'validate', 'resolve_histories', 'normalize_dates', 'normalize_times', 'assemble_result',
         ])
-        self.assertEqual(updates[-2]['normalize_dates']['date_checks'], [{
+        self.assertEqual(updates[-3]['normalize_dates']['date_checks'], [{
             'schedule_index': 0, 'status': 'resolved', 'expected_date': '2026-09-28',
         }])
-        selected = updates[-3]['resolve_histories']['result']['schedules'][0]
-        dated = updates[-2]['normalize_dates']['result']['schedules'][0]
-        resolved = updates[-1]['normalize_times']['result']['schedules'][0]
+        selected = updates[-4]['resolve_histories']['schedules'][0]
+        dated = updates[-3]['normalize_dates']['schedules'][0]
+        resolved = updates[-2]['normalize_times']['schedules'][0]
         self.assertNotIn('extractedScheduleDate', selected)
         self.assertNotIn('resolvedDate', selected)
         self.assertEqual(dated['resolvedDate'], '2026-09-28')
         self.assertNotIn('extractedScheduleDate', dated)
         self.assertEqual(resolved['extractedScheduleDate'], '2026-09-28T15:00:00')
+        self.assertEqual(updates[-1]['assemble_result']['result'], {
+            'summarizedText': '회의 요약', 'schedules': [resolved],
+        })
+        for update in updates[2:-1]:
+            node_update = next(iter(update.values()))
+            self.assertNotIn('summarized_text', node_update)
+            self.assertNotIn('result', node_update)
         generate.assert_called_once()
 
     def test_date_normalization_does_not_require_remaining_repair_budget(self):

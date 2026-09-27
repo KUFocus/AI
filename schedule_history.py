@@ -34,4 +34,4 @@ def resolve_schedule_history(decisions: list[dict], input_text: str) -> dict | N
             confirmed = None
         # 미확정 제안만으로 기존 확정본을 변경하지 않는다.
 
-    return confirmed.model_dump() if confirmed is not None else None
+    return confirmed.model_dump(exclude_defaults=True) if confirmed is not None else None

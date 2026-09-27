@@ -42,9 +42,11 @@ class OpenAISummaryModelTest(unittest.TestCase):
         body = json.loads(requests[0].content)
         response_format = body.pop("response_format")
         self.assertEqual(body, {
-            "model": "gpt-4.1-2025-04-14",
+            "model": "gpt-6-luna",
             "messages": messages,
-            "max_tokens": 500,
+            "max_completion_tokens": 1000,
+            "reasoning_effort": "none",
+            "service_tier": "default",
             "temperature": 0.7,
         })
         self.assertEqual(response_format["type"], "json_schema")
@@ -61,7 +63,7 @@ class OpenAISummaryModelTest(unittest.TestCase):
         schedule = schema["$defs"]["ScheduleDecision"]
         self.assertEqual(list(schedule['properties']), [
             'eventId', 'extractedScheduleContent', 'evidence', 'status',
-            'dateExpression', 'timeExpression',
+            'dateExpression', 'timeExpression', 'dateReference', 'timeReference',
         ])
         evidence = schema['$defs']['EvidenceRange']
         self.assertEqual(schedule['properties']['evidence'], {'$ref': '#/$defs/EvidenceRange'})
@@ -71,8 +73,8 @@ class OpenAISummaryModelTest(unittest.TestCase):
         self.assertEqual(evidence['properties']['end']['type'], 'integer')
         self.assertEqual(schedule["type"], "object")
         self.assertIs(schedule["additionalProperties"], False)
-        self.assertEqual(set(schedule["required"]), {"extractedScheduleContent", "dateExpression", "status", "evidence", "eventId", "timeExpression"})
-        self.assertEqual(set(schedule["properties"]), {"extractedScheduleContent", "dateExpression", "status", "evidence", "eventId", "timeExpression"})
+        self.assertEqual(set(schedule["required"]), {"extractedScheduleContent", "dateExpression", "status", "evidence", "eventId", "timeExpression", "dateReference", "timeReference"})
+        self.assertEqual(set(schedule["properties"]), {"extractedScheduleContent", "dateExpression", "status", "evidence", "eventId", "timeExpression", "dateReference", "timeReference"})
         self.assertEqual(schedule["properties"]["status"]["enum"], ["confirmed", "tentative", "cancelled"])
         for name in ["dateExpression", "timeExpression"]:
             self.assertEqual(schedule["properties"][name]["anyOf"], [{"type": "string"}, {"type": "null"}])

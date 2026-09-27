@@ -27,6 +27,8 @@ class SummaryState(TypedDict, total=False):
     request_datetime: str
     omitted_schedule_indexes: list[int]
     response_content: str
+    summarized_text: str | None
+    schedules: list[dict] | None
     result: dict | None
     attempts: int
     validation_error: str | None
@@ -49,7 +51,10 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
     def validate(state: SummaryState):
         try:
             result = validate_response(state['response_content'], state['input_text'])
-            return {'result': result, 'validation_error': None, 'evidence_repair_required': False}
+            return {
+                'summarized_text': result['summarizedText'], 'schedules': result['schedules'],
+                'result': None, 'validation_error': None, 'evidence_repair_required': False,
+            }
         except (json.JSONDecodeError, ValidationError) as error:
             if state['attempts'] >= max_attempts:
                 raise
@@ -57,7 +62,8 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
                 evidence_mismatch_detail(item, state['input_text']) is not None
                 for item in error.errors(include_input=True, include_url=False)
             )
-            return {'result': None, 'validation_error': validation_feedback(error, state['input_text']),
+            return {'summarized_text': None, 'schedules': None, 'result': None,
+                    'validation_error': validation_feedback(error, state['input_text']),
                     'evidence_repair_required': evidence_repair_required}
 
     def route_after_validation(state: SummaryState):
@@ -65,7 +71,7 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
 
     def resolve_histories(state: SummaryState):
         groups = {}
-        for index, decision in enumerate(state['result']['schedules']):
+        for index, decision in enumerate(state['schedules']):
             groups.setdefault(decision['eventId'], []).append((index, decision))
         schedules = []
         indexes = []
@@ -79,7 +85,7 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
                 feedback = f'일정 식별자 {event_id}: {error}'
                 if state['attempts'] >= max_attempts:
                     raise ScheduleHistoryError(feedback) from error
-                return {'result': None, 'validation_error': feedback, 'schedule_indexes': []}
+                return {'schedules': None, 'result': None, 'validation_error': feedback, 'schedule_indexes': []}
             if selected is not None:
                 source_index = next(index for index, decision in entries
                                     if decision['evidence'] == selected['evidence'])
@@ -90,7 +96,7 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
                 schedules.append(selected)
                 indexes.append(source_index)
         return {
-            'result': {**state['result'], 'schedules': schedules},
+            'schedules': schedules,
             'schedule_indexes': indexes, 'omitted_schedule_indexes': omitted, 'validation_error': None,
         }
 
@@ -98,7 +104,7 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
         checks = []
         errors = []
         schedules = []
-        for index, schedule in zip(state['schedule_indexes'], state['result']['schedules'], strict=True):
+        for index, schedule in zip(state['schedule_indexes'], state['schedules'], strict=True):
             effective_time = schedule['timeExpression']
             reclassified = False
             try:
@@ -138,9 +144,9 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
             feedback = '\n'.join(errors)
             if state['attempts'] >= max_attempts:
                 raise ValueError(feedback)
-            return {'result': None, 'validation_error': feedback, 'date_checks': checks}
+            return {'schedules': None, 'result': None, 'validation_error': feedback, 'date_checks': checks}
         return {
-            'result': {**state['result'], 'schedules': schedules},
+            'schedules': schedules,
             'validation_error': None, 'date_checks': checks,
         }
 
@@ -148,7 +154,7 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
         checks = []
         errors = []
         schedules = []
-        for index, schedule in zip(state['schedule_indexes'], state['result']['schedules'], strict=True):
+        for index, schedule in zip(state['schedule_indexes'], state['schedules'], strict=True):
             expression = schedule['effectiveTimeExpression']
             try:
                 clock = '18:00:00' if expression is None else resolve_schedule_time.invoke({
@@ -181,11 +187,18 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
             feedback = '\n'.join(errors)
             if state['attempts'] >= max_attempts:
                 raise ValueError(feedback)
-            return {'result': None, 'validation_error': feedback, 'time_checks': checks}
+            return {'schedules': None, 'result': None, 'validation_error': feedback, 'time_checks': checks}
         return {
-            'result': {**state['result'], 'schedules': schedules},
+            'schedules': schedules,
             'validation_error': None, 'time_checks': checks,
         }
+
+    def assemble_result(state: SummaryState):
+        # 요약과 일정 처리가 완료된 뒤 기존 응답 형태로 합친다.
+        return {'result': {
+            'summarizedText': state['summarized_text'],
+            'schedules': state['schedules'],
+        }}
 
     def repair(state: SummaryState):
         logger.warning('모델 응답 검증에 실패하여 한 번 수정을 요청합니다. %s', state['validation_error'])
@@ -195,6 +208,7 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
                 '수정할 때 원문의 결정 상태와 참조 관계를 함께 확인하세요. '
                 '근거 구간 겹침 금지는 같은 eventId의 변경 이력에만 적용합니다. '
                 '별개 일정이 앞선 날짜와 시각을 참조하면 별도 eventId를 부여하고 기준 발언부터 확정 발언까지 근거에 포함할 수 있습니다. '
+                '앞선 발언을 참조할 때 dateReference와 timeReference에 현재 참조 표현과 기준 구간을 명시할 수 있습니다. evidence는 현재 결정 발언, source는 그보다 앞선 실제 날짜 또는 시각 발언이어야 합니다. '
                 '직접 날짜를 다시 말하지 않았더라도 앞선 날짜와 시각을 명시적으로 참조한 확정 일정은 null로 지워 누락시키지 마세요. '
                 '취소나 미확정 발언에는 앞선 확정 일정의 날짜와 시각을 상속하지 마세요. 해당 발언에 없으면 null로 두고 상태를 유지하세요.'
             )})
@@ -215,12 +229,14 @@ def build_summary_workflow(generate_response, validate_response, *, repair_inval
     graph.add_node('normalize_dates', normalize_dates)
     graph.add_node('normalize_times', normalize_times)
     graph.add_node('repair', repair)
+    graph.add_node('assemble_result', assemble_result)
     graph.add_edge(START, 'generate')
     graph.add_edge('generate', 'validate')
     graph.add_conditional_edges('validate', route_after_validation, {'repair': 'repair', 'end': 'resolve_histories'})
     graph.add_conditional_edges('resolve_histories', route_after_validation, {'repair': 'repair', 'end': 'normalize_dates'})
     graph.add_conditional_edges('normalize_dates', route_after_validation, {'repair': 'repair', 'end': 'normalize_times'})
-    graph.add_conditional_edges('normalize_times', route_after_validation, {'repair': 'repair', 'end': END})
+    graph.add_conditional_edges('normalize_times', route_after_validation, {'repair': 'repair', 'end': 'assemble_result'})
+    graph.add_edge('assemble_result', END)
     graph.add_edge('repair', 'generate')
     return graph.compile()
 
