@@ -24,6 +24,7 @@ def create_local_index_provider(model_directory, database_path, model_revision):
             from meeting_embeddings import LocalMeetingEmbeddings
             from meeting_chunks import MeetingChunker
             from meeting_index import LocalMeetingIndex
+            from meeting_embedding_cache import CachedMeetingEmbeddings
 
             model_path = Path(model_directory)
             manifest = json.loads((model_path / 'model-info.json').read_text())
@@ -40,7 +41,15 @@ def create_local_index_provider(model_directory, database_path, model_revision):
             chunker = MeetingChunker(embeddings.count_document_tokens)
             # 경로는 서버 설정에서만 받으며 요청 본문으로 지정할 수 없다.
             Path(database_path).parent.mkdir(parents=True, exist_ok=True)
-            instance = LocalMeetingIndex(database_path, chunker, embeddings, pipeline_version=pipeline_version)
+            model_identity = json.dumps({
+                'model': manifest['model'], 'revision': model_revision,
+                'pooling': 'masked-mean-l2-v1', 'dimensions': embeddings.dimensions,
+                'document_prefix': 'passage: ', 'query_prefix': 'query: ',
+            }, sort_keys=True)
+            cached_embeddings = CachedMeetingEmbeddings(
+                embeddings, str(database_path) + '.embeddings', model_identity=model_identity,
+            )
+            instance = LocalMeetingIndex(database_path, chunker, cached_embeddings, pipeline_version=pipeline_version)
             return instance
 
     return provide
