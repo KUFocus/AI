@@ -177,13 +177,28 @@ class LocalMeetingIndex:
             return []
         query = self.embeddings.embed_query(question)
         self._validate_vector(query)
-        hits = []
+        import faiss
+        import numpy as np
+
+        vectors = []
+        candidates = []
         for stored_minutes_id, source_hash, chunks_json in rows:
             for chunk in json.loads(chunks_json):
                 vector = chunk['vector']
                 self._validate_vector(vector)
-                # 저장과 질문 양쪽이 단위 벡터이므로 내적이 코사인 유사도다.
-                score = max(-1.0, min(1.0, sum(a * b for a, b in zip(query, vector))))
-                hits.append(SearchHit(project_id, stored_minutes_id, chunk['index'],
-                                      chunk['text'], chunk['start'], chunk['end'], score, source_hash))
+                vectors.append(vector)
+                candidates.append((stored_minutes_id, source_hash, chunk))
+        if not candidates:
+            return []
+        # 원문과 벡터는 SQLite에 보존하고 검색 범위의 벡터만 FAISS에 올린다.
+        index = faiss.IndexFlatIP(self.embeddings.dimensions)
+        index.add(np.asarray(vectors, dtype=np.float32))
+        # 소규모에서는 전체 순위를 받아 동점인 청크도 기존 식별자 순서를 유지한다.
+        scores, positions = index.search(np.asarray([query], dtype=np.float32), len(candidates))
+        hits = []
+        for score, position in zip(scores[0], positions[0]):
+            stored_minutes_id, source_hash, chunk = candidates[int(position)]
+            hits.append(SearchHit(project_id, stored_minutes_id, chunk['index'],
+                                  chunk['text'], chunk['start'], chunk['end'],
+                                  max(-1.0, min(1.0, float(score))), source_hash))
         return sorted(hits, key=lambda hit: (-hit.score, hit.minutes_id, hit.chunk_index))[:top_k]

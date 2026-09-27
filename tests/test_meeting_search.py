@@ -31,7 +31,8 @@ class MeetingSearchTests(unittest.TestCase):
     def test_ranked_results_include_source_identity_and_positions(self):
         results = self.store.search(1, '오류 원인은?', top_k=2)
         self.assertEqual([hit.minutes_id for hit in results], [11, 12])
-        self.assertEqual([hit.score for hit in results], [1.0, 0.6])
+        for hit, expected in zip(results, [1.0, 0.6]):
+            self.assertAlmostEqual(hit.score, expected, places=6)
         for hit in results:
             document = self.store.get(1, hit.minutes_id)
             self.assertEqual(hit.text, document['source_text'][hit.start:hit.end])
@@ -92,6 +93,40 @@ class MeetingSearchTests(unittest.TestCase):
             with self.subTest(project=project, minutes=minutes), self.assertRaises(ValueError):
                 self.store.search(project, '질문', minutes_id=minutes)
         self.embeddings.embed_query.assert_not_called()
+
+    def test_ties_at_top_k_boundary_keep_smallest_identity(self):
+        for minutes_id in [16, 14, 13, 15]:
+            self.store.index(1, minutes_id, '서버 오류')
+        self.assertEqual([hit.minutes_id for hit in self.store.search(1, '질문', top_k=2)], [11, 13])
+
+    def test_faiss_matches_previous_dot_product_for_normalized_vectors(self):
+        import random
+        import math
+        randomizer = random.Random(37)
+        dimensions = 384
+        def unit_vector():
+            values = [randomizer.uniform(-1, 1) for _ in range(dimensions)]
+            length = math.sqrt(sum(value * value for value in values))
+            return [value / length for value in values]
+        vectors = {str(i): unit_vector() for i in range(40)}
+        query = unit_vector()
+        model = Mock(dimensions=dimensions)
+        model.embed_documents.side_effect = lambda texts: [vectors[text] for text in texts]
+        model.embed_query.return_value = query
+        store = LocalMeetingIndex(self.path, self.chunker, model, pipeline_version='비교 버전')
+        for i in range(40):
+            store.index(5, i + 1, str(i))
+        expected = sorted([(sum(a * b for a, b in zip(vector, query)), int(text) + 1)
+                           for text, vector in vectors.items()], key=lambda item: (-item[0], item[1]))[:10]
+        actual = store.search(5, '비교 질문', top_k=10)
+        self.assertEqual([hit.minutes_id for hit in actual], [item[1] for item in expected])
+        for hit, (score, _) in zip(actual, expected):
+            self.assertAlmostEqual(hit.score, score, places=6)
+
+    def test_deleted_document_is_absent_from_next_faiss_search(self):
+        self.assertEqual(self.store.search(1, '질문', top_k=1)[0].minutes_id, 11)
+        self.store.delete_saved(self.path, 1, 11)
+        self.assertEqual(self.store.search(1, '질문', top_k=1)[0].minutes_id, 12)
 
 
 if __name__ == '__main__':
