@@ -24,6 +24,36 @@ class RepairEvidenceFeedbackTest(unittest.TestCase):
         feedback = validation_feedback(caught.exception, source)
         return [json.loads(line) for line in feedback.splitlines() if line.startswith('{')][0]
 
+    def test_reference_values_get_specific_feedback_and_repair_route(self):
+        source = '발표는 내일 오전 10시입니다. 검토도 같은 날 같은 시각입니다.'
+        for date_value, time_value in [(None, None), ('같은 날', '같은 시각')]:
+            with self.subTest(date=date_value, time=time_value):
+                raw = response({'start': 2, 'end': 2},
+                    dateExpression=date_value, timeExpression=time_value,
+                    dateReference={'expression': '같은 날', 'source': {'start': 1, 'end': 1}},
+                    timeReference={'expression': '같은 시각', 'source': {'start': 1, 'end': 1}})
+                detail = self.feedback_detail(source, raw)
+                self.assertEqual(detail['reference_mismatches']['dateExpression']['value'], date_value)
+                self.assertEqual(detail['reference_mismatches']['timeExpression']['source'], {'start': 1, 'end': 1})
+                fixed = json.loads(raw)
+                fixed['schedules'][0].update(dateExpression='내일', timeExpression='오전 10시')
+                first = Mock(return_value=raw)
+                repair = Mock(return_value=json.dumps(fixed))
+                result = MeetingSummarizer(first, now=lambda: datetime(2026, 9, 26),
+                    repair_complete=repair).summarize(source)
+                self.assertEqual(first.call_count, 1)
+                self.assertEqual(repair.call_count, 1)
+                self.assertEqual(result['schedules'][0]['extractedScheduleDate'], '2026-09-27T10:00:00')
+                self.assertIn('reference_mismatches', repair.call_args.args[0][-1]['content'])
+
+    def test_invalid_reference_range_is_not_presented_as_verified_source(self):
+        source = '내일 오전 10시 검토합니다.'
+        raw = response({'start': 1, 'end': 1}, dateExpression=None,
+            dateReference={'expression': '내일', 'source': {'start': 9, 'end': 9}})
+        with self.assertRaises(ValidationError) as caught:
+            MeetingSummarizer.validate_response(raw, source)
+        self.assertNotIn('reference_mismatches', validation_feedback(caught.exception, source))
+
     def test_unique_earlier_expressions_supply_a_range_candidate(self):
         source = '발표는 내일 오전 10시로 정합니다. 검토도 같은 날 같은 시각으로 정합니다.'
         detail = self.feedback_detail(source, response({'start': 2, 'end': 2}))
